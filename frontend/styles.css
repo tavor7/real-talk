@@ -1,0 +1,199 @@
+:root {
+  --bg: #0f0f12;
+  --surface: #1a1a1f;
+  --border: #2a2a32;
+  --text: #e8e8ec;
+  --muted: #888;
+  --accent: #7c6ef6;
+  --accent-hover: #9b8cf8;
+  --success: #4ade80;
+  --error: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "DM Sans", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 1rem 2rem;
+  line-height: 1.5;
+}
+
+header {
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+header p {
+  color: var(--muted);
+  margin: 0.25rem 0 0;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+section {
+  margin-bottom: 2rem;
+}
+
+section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+select, input[type="text"], textarea {
+  width: 100%;
+  max-width: 400px;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+}
+
+textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.scenario-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.scenario-options select {
+  max-width: 220px;
+}
+
+.scenario-options input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.or {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+  border: none;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  margin-top: 0.5rem;
+}
+
+button.primary:hover {
+  background: var(--accent-hover);
+}
+
+#sendBtn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  align-self: flex-end;
+}
+
+#sendBtn:hover {
+  background: var(--border);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.chat-box, .response-box, .steps-box, .summary-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  min-height: 80px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-box .msg {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  max-width: 85%;
+}
+
+.chat-box .msg.user {
+  background: var(--accent);
+  color: #fff;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.chat-box .msg.assistant {
+  background: var(--border);
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.input-row textarea {
+  flex: 1;
+  max-width: none;
+}
+
+.steps-box .step {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.steps-box .step .module {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.steps-box .step .prompt, .steps-box .step .response {
+  color: var(--muted);
+  margin-top: 0.25rem;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.summary-box {
+  color: var(--text);
+}
+
+#profileInfo {
+  margin-top: 0.25rem;
+}

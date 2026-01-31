@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RealTalk – Language Practice Agent</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>RealTalk</h1>
+    <p>Practice informal slang & real-world conversation</p>
+  </header>
+
+  <main>
+    <section id="setup">
+      <h2>1. Choose your profile</h2>
+      <select id="profileSelect">
+        <option value="">-- Select profile --</option>
+      </select>
+      <p id="profileInfo" class="muted"></p>
+
+      <h2>2. Choose or describe a scenario</h2>
+      <div class="scenario-options">
+        <select id="scenarioSelect">
+          <option value="">-- Pre-defined scenario --</option>
+        </select>
+        <span class="or">or</span>
+        <input type="text" id="scenarioCustom" placeholder="Describe your own scenario..." />
+      </div>
+
+      <button id="runAgent" class="primary">Run Agent</button>
+    </section>
+
+    <section id="chatSection" class="hidden">
+      <h2>Conversation</h2>
+      <div id="conversation" class="chat-box"></div>
+      <div class="input-row">
+        <textarea id="userInput" rows="2" placeholder="Type your message..."></textarea>
+        <button id="sendBtn">Send</button>
+      </div>
+    </section>
+
+    <section id="responseSection" class="hidden">
+      <h2>Final response</h2>
+      <div id="finalResponse" class="response-box"></div>
+    </section>
+
+    <section id="stepsSection" class="hidden">
+      <h2>Steps trace (module → prompt → response)</h2>
+      <div id="stepsTrace" class="steps-box"></div>
+    </section>
+
+    <section id="summarySection" class="hidden">
+      <h2>Conversation summary & evaluation</h2>
+      <div id="summaryContent" class="summary-box"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
