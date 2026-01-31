@@ -27,9 +27,9 @@ def team_info():
         "group_batch_order_number": "1_1",
         "team_name": "RealTalk Team",
         "students": [
-            {"name": "Student A", "email": "a@example.com"},
-            {"name": "Student B", "email": "b@example.com"},
-            {"name": "Student C", "email": "c@example.com"},
+            {"name": "Amit Tavor", "email": "amit.tavor@campus.technion.ac.il"},
+            {"name": "Sagie Dekel", "email": "sagie.dekel@campus.technion.ac.il"},
+            {"name": "Itay Nulman", "email": "itai.nulman@campus.technion.ac.il"},
         ],
     }
 
