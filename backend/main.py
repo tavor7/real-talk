@@ -10,9 +10,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Load .env from backend/ when running uvicorn from backend/
-_env = Path(__file__).resolve().parent / ".env"
-load_dotenv(_env)
+# Load .env so the same key as in LiteLLM token table is used (no extra chars)
+_backend_dir = Path(__file__).resolve().parent
+_project_root = _backend_dir.parent
+for _p in (_backend_dir / ".env", _project_root / ".env"):
+    if _p.exists():
+        load_dotenv(_p)
+        break
+else:
+    load_dotenv(_backend_dir / ".env")
 
 from api.routes import router
 

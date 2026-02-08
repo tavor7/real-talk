@@ -27,7 +27,8 @@ def get_embedding(text: str, dimension: int | None = None) -> list[float]:
             from openai import OpenAI
             base_url = os.environ.get("OPENAI_BASE_URL") or None
             client = OpenAI(api_key=api_key, base_url=base_url)
-            kwargs = {"model": "text-embedding-3-small", "input": text}
+            embed_model = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+            kwargs = {"model": embed_model, "input": text}
             if dim != 1536:
                 kwargs["dimensions"] = dim
             r = client.embeddings.create(**kwargs)

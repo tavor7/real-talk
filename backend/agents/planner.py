@@ -1,10 +1,9 @@
 """
 ProgramPlanner (Plan & Execute Agent): Breaks request into steps, decides learning objective and conversation structure.
 """
-import json
 from typing import Any
 
-from .llm_helper import call_llm
+from .llm_helper import call_llm, parse_json_from_llm
 
 
 class ProgramPlanner:
@@ -17,10 +16,7 @@ class ProgramPlanner:
         user = f"User request: {prompt}. Output JSON only."
         response, full = call_llm(system, user, "ProgramPlanner")
         steps = [{"module": "ProgramPlanner", "prompt": {"system": system, "user": user}, "response": full}]
-        try:
-            plan = json.loads(response) if response.strip().startswith("{") else {}
-        except json.JSONDecodeError:
-            plan = {"learning_objective": "Practice informal conversation.", "conversation_structure": ["greeting", "topic", "close"]}
+        plan = parse_json_from_llm(response)
         plan.setdefault("learning_objective", "Practice informal conversation.")
         plan.setdefault("conversation_structure", ["greeting", "topic", "close"])
         return plan, steps

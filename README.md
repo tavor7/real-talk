@@ -1,4 +1,4 @@
-# SlangSpeak – Language School AI Agent
+# RealTalk – Language School AI Agent
 
 Autonomous AI agent for language schools: simulates realistic slang-based conversations, adapts to proficiency, and uses RAG over Reddit for informal language patterns.
 

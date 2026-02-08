@@ -15,3 +15,8 @@ venv/
 .vscode/
 .DS_Store
 ~$*
+
+# RAG datasets (large / generated)
+backend/rag/data/corpus-webis-tldr-17.json
+backend/rag/data/corpus-webis-tldr-17.zip
+backend/rag/data/reddit_50k.csv

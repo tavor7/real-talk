@@ -4,7 +4,36 @@ Optimized to minimize LLM calls and stay within budget.
 """
 import os
 import json
+import re
 from typing import Any
+
+
+def parse_json_from_llm(response: str) -> dict:
+    """Extract JSON from LLM response (handles ```json ... ``` or raw {...})."""
+    text = (response or "").strip()
+    for pattern in (r"```(?:json)?\s*([\s\S]*?)\s*```", r"```\s*([\s\S]*?)\s*```"):
+        m = re.search(pattern, text)
+        if m:
+            text = m.group(1).strip()
+    start = text.find("{")
+    if start != -1:
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+    if text.startswith("{"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+    return {}
 
 
 def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
@@ -12,14 +41,14 @@ def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
     Call LLM (OpenAI chat). Returns (response_text, full_response_for_logging).
     If no API key, returns mock based on module.
     """
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if api_key:
         try:
             from openai import OpenAI
-            base_url = os.environ.get("OPENAI_BASE_URL") or None
+            base_url = (os.environ.get("OPENAI_BASE_URL") or "").strip() or None
             client = OpenAI(api_key=api_key, base_url=base_url)
             r = client.chat.completions.create(
-                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                model=(os.environ.get("OPENAI_MODEL") or "gpt-4o-mini").strip(),
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                 max_tokens=500,
             )

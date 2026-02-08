@@ -9,6 +9,12 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 # Load .env from backend/
 _backend = Path(__file__).resolve().parent.parent
 _env = _backend / ".env"
@@ -93,17 +99,18 @@ def main():
     from rag.reddit_retriever import get_embedding
     from db.pinecone import upsert_vectors
 
-    for start in range(0, len(rows), args.batch):
+    num_batches = (len(rows) + args.batch - 1) // args.batch
+    batch_starts = range(0, len(rows), args.batch)
+    for start in tqdm(batch_starts, total=num_batches, desc="Upserting", unit="batch"):
         batch = rows[start : start + args.batch]
         vectors = []
-        for r in batch:
+        for r in tqdm(batch, leave=False, desc="Embed", unit="vec"):
             emb = get_embedding(r["text"], dimension=embed_dim)
             meta = {"text": r["text"]}
             if r.get("subreddit"):
                 meta["subreddit"] = str(r["subreddit"])[:200]
             vectors.append((r["id"], emb, meta))
         upsert_vectors(vectors, namespace=args.namespace)
-        print(f"Upserted {len(vectors)} vectors (rows {start + 1}–{start + len(vectors)})")
     print("Done.")
 
 
