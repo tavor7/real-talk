@@ -52,7 +52,6 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
    - Click **Run Agent** to begin
 4. **Verify setup** – If you see errors, check:
    - `.env` file has all required variables (see [Environment variables](#environment-variables-backendenv))
-   - Supabase tables are created (see [Supabase Setup](#supabase-setup))
    - Pinecone index exists if using RAG (see [RAG](#rag-reddit-data-in-pinecone))
 
 **Available URLs:**
@@ -100,12 +99,22 @@ To populate the RAG used by ScenarioArchitect:
 
 ## Supabase Setup
 
-1. **Create tables** – Run `backend/supabase_schema.sql` in Supabase Dashboard → SQL Editor to create:
-   - `user_profiles` – 10 predefined profiles (or add your own)
-   - `proficiency` – Stores last scenario and summary per user
-   - `conversation_summaries` – Stores conversation summaries and LLM instructions for continuity
+**Note:** Supabase tables (`user_profiles`, `proficiency`, `conversation_summaries`) should already be created.
 
-2. **Clean/reset data** – To reset all conversation data:
+If you need to recreate them then:
+
+**Create tables** – Run the SQL schema in Supabase Dashboard:
+   - Go to https://app.supabase.com → Your Project
+   - Navigate to **SQL Editor** → **New query**
+   - Open `backend/supabase_schema.sql` and copy its contents
+   - Paste into the SQL Editor and click **Run** (or press Cmd+Enter / Ctrl+Enter)
+   - You should see: "Success. No rows returned"
+   - Go to **Table Editor** to verify tables were created:
+     - `user_profiles` – 10 predefined profiles (or add your own)
+     - `proficiency` – Stores last scenario and summary per user
+     - `conversation_summaries` – Stores conversation summaries and LLM instructions for continuity
+
+**Clean/reset data** – To reset all conversation data:
    ```bash
    cd backend
    python scripts/clean_supabase.py
