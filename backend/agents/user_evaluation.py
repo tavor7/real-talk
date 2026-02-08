@@ -93,16 +93,21 @@ class UserEvaluation:
 
         if is_first_turn:
             system = (
-                "You are a casual language practice partner. Output only valid JSON with keys: reply (string), summary (null). "
-                "Your reply must be ONE short opening line that STARTS the conversation IN the scenario — as if you are already in the scene (e.g. barista, friend at the coffee shop). "
-                "Do NOT ask 'what do you want to practice' or 'what would you like to practice' — that breaks the scene. Say the first line of the dialogue (e.g. greet the learner by name, ask about their order, or mention their interests like streaming)."
+                "You are a conversation partner talking TO the learner (not as the learner). "
+                "The learner is practicing AS the chosen profile (e.g. Alex, A2 level, into gaming/streaming). "
+                "You are a character in the scenario (e.g. barista, friend, etc.) talking TO them. "
+                "Output only valid JSON with keys: reply (string), summary (null). "
+                "Your reply must be ONE short opening line that STARTS the conversation — say the first thing your character says TO the learner. "
+                "Do NOT say 'I'm Alex' or speak AS the learner. You are talking TO them. Examples: barista says 'Hey {name}! What can I get you?'; friend says 'Yo {name}, grabbing a coffee before your stream?'. "
+                "Do NOT ask 'what do you want to practice' — that breaks the scene."
             )
             user = (
                 f"{previous_block}"
                 f"{CEFR_LEVELS_HELP}\n\n"
-                f"Scenario: {scenario_name}. Learner: {name}, level {level}, interests: {goals}. {level_instruction}\n\n"
-                f"Write the FIRST line you say in this scenario to start the conversation. Examples: barista says 'Hey {name}! Usual today or trying something new?'; friend says 'Yo, grabbing a coffee before your stream?'. "
-                f"Use the learner's name and/or interests when natural. Use informal slang.\n\n"
+                f"Scenario: {scenario_name}. Learner practicing AS: {name}, level {level}, interests: {goals}. {level_instruction}\n\n"
+                f"You are a character in this scenario (e.g. barista, friend) talking TO {name}. Write the FIRST line you say TO them to start the conversation. "
+                f"Examples: barista says 'Hey {name}! What can I get you today?'; friend says 'Yo {name}, grabbing a coffee before your stream?'. "
+                f"Use their name and/or interests when natural. Use informal slang. You are talking TO them, not AS them.\n\n"
                 f"{examples_block}{seed_block}Output JSON only: {{\"reply\": \"...\", \"summary\": null}}."
             )
         else:
@@ -135,9 +140,13 @@ class UserEvaluation:
         # Fallback only when reply is missing or empty - use context-aware defaults, NEVER repeat dialogue_seed
         reply = (out.get("reply") or "").strip()
         # Never use a meta "what do you want to practice?" as first message — replace with in-scenario opener
+        # Never let agent speak AS the learner (e.g. "I'm Alex") — agent talks TO the learner
         if is_first_turn and reply:
             meta_phrases = ("what do you want to practice", "what would you like to practice", "what do you wanna practice", "what would you like to practice today")
             if any(p in reply.lower() for p in meta_phrases):
+                reply = ""
+            # Check if agent is speaking AS the learner (wrong)
+            if name and (f"i'm {name.lower()}" in reply.lower() or f"i am {name.lower()}" in reply.lower() or reply.lower().startswith(f"{name.lower()}:") or reply.lower().startswith(f"i'm {name.lower()}")):
                 reply = ""
         if not reply:
             if is_first_turn:
@@ -146,13 +155,16 @@ class UserEvaluation:
                 g = (goals or "").lower()
                 n = (name or "").strip()
                 if "coffee" in s or "shop" in s:
-                    reply = f"Hey{n and ' ' + n}! Grabbing a coffee before your stream? What game are you playing?" if ("stream" in g or "game" in g) else "Hey! Just got my coffee — you here for the vibe or to get some work done?"
+                    if n and ("stream" in g or "game" in g):
+                        reply = f"Hey {n}! Grabbing a coffee before your stream? What game are you playing?"
+                    else:
+                        reply = f"Hey{n and ' ' + n}! What can I get you today?" if n else "Hey! What can I get you?"
                 elif "game" in s or "gaming" in g:
-                    reply = "Yo! You catch that stream last night? So good."
+                    reply = f"Yo{n and ' ' + n}! You catch that stream last night? So good." if n else "Yo! You catch that stream last night?"
                 elif "stream" in g or "streaming" in s:
-                    reply = f"What's up{n and ' ' + n}! You stream or just watch? Either way, let's chat."
+                    reply = f"What's up{n and ' ' + n}! You stream or just watch?" if n else "What's up! You stream or just watch?"
                 else:
-                    reply = "Hey! What's up?"
+                    reply = f"Hey{n and ' ' + n}! What's up?" if n else "Hey! What's up?"
             else:
                 um = (user_message or "").lower()
                 if any(w in um for w in ("how are you", "how're you", "how r u", "you?")):

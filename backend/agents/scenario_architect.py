@@ -54,22 +54,25 @@ class ScenarioArchitect:
         profile_brief = f"Learner: {name}, level {level}" + (f", into {goals_str}" if goals_str else "")
         system = (
             "You are a scenario builder for language practice. Output only valid JSON with keys: scenario (string), dialogue_seed (list of 2-3 opening lines). "
-            "scenario = 1-2 sentences that describe the setting AND mention the learner (e.g. 'You're at a coffee shop. You're Alex, into gaming and streaming — practice ordering, small talk.'). "
+            "scenario = 1-2 sentences describing the setting. The learner is practicing AS the chosen profile (e.g. Alex, A2 level, into gaming/streaming). "
+            "The agent will talk TO the learner (e.g. as a barista, friend, etc.). Example: 'You're practicing as Alex at a coffee shop. Practice ordering drinks, small talk about gaming/streaming, and casual conversation.' "
             "Use informal slang. Keep it short."
         )
         plan_full = plan.get("learning_objective") or ""
         # Truncate only if LLM_PROMPT_MAX_LENGTH env var is set
         plan_for_llm = truncate_if_needed(plan_full)
         rag_for_llm = truncate_if_needed(rag_context)
-        user_for_llm = f"{profile_brief}. Hint: {hint}. Plan: {plan_for_llm}. RAG: {rag_for_llm}\nOutput JSON: scenario (1-2 sentences with learner name/interests), dialogue_seed (2-3 lines)."
+        user_for_llm = f"{profile_brief}. Hint: {hint}. Plan: {plan_for_llm}. RAG: {rag_for_llm}\nOutput JSON: scenario (describe setting; learner practices AS this profile; agent talks TO learner), dialogue_seed (2-3 example opening lines the AGENT might say TO the learner)."
         # For logging: always store full prompt so user sees everything
-        user_full = f"{profile_brief}. Hint: {hint}. Plan: {plan_full}. RAG: {rag_context}\nOutput JSON: scenario (1-2 sentences with learner name/interests), dialogue_seed (2-3 lines)."
+        user_full = f"{profile_brief}. Hint: {hint}. Plan: {plan_full}. RAG: {rag_context}\nOutput JSON: scenario (describe setting; learner practices AS this profile; agent talks TO learner), dialogue_seed (2-3 example opening lines the AGENT might say TO the learner)."
         response, full = call_llm(system, user_for_llm, "ScenarioArchitect")
         steps.append({"module": "ScenarioArchitect", "prompt": {"system": system, "user": user_full, "rag_query": rag_query}, "response": full})
 
         out = parse_json_from_llm(response)
-        out.setdefault("scenario", "Casual chat")
-        out.setdefault("dialogue_seed", ["Hey! What's up?", "Not much, you?"])
+        # Fallback scenario: clarify that learner practices AS the profile, agent talks TO them
+        fallback_scenario = f"Practice as {name} (level {level}" + (f", into {goals_str}" if goals_str else "") + f") in a casual scenario. The agent will talk to you."
+        out.setdefault("scenario", fallback_scenario)
+        out.setdefault("dialogue_seed", [f"Hey {name}! What's up?" if name else "Hey! What's up?", "Not much, you?"])
         # Pass RAG examples to UserEvaluation so replies use real informal style
         out["rag_examples"] = rag_texts[:5]
         return out, steps
