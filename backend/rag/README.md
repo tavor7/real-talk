@@ -1,6 +1,14 @@
 # RAG: Reddit-style data for informal language
 
-The app uses Pinecone to store embeddings of informal/slang text. At runtime, ScenarioArchitect retrieves similar chunks to seed dialogue.
+The app uses Pinecone to store embeddings of informal/slang text. At runtime, **ScenarioArchitect** retrieves similar chunks to seed dialogue.
+
+**How RAG is used:**
+- On every user message, ScenarioArchitect builds a query from: **scenario hint + user profile goals + recent conversation messages**
+- This ensures retrieved Reddit chunks are relevant to both the scenario and the current topic
+- Retrieved chunks are used as examples of informal style in prompts to UserEvaluation
+- **Configuration:**
+  - **Top-k retrieval:** `top_k=5` (retrieves 5 most similar chunks per query)
+  - **Batch size:** `50` (used when building/upserting embeddings to Pinecone)
 
 ## What you need
 
