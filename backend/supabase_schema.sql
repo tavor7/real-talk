@@ -10,13 +10,29 @@ create table if not exists public.user_profiles (
   age_group text
 );
 
--- Proficiency cache (updated by UserEvaluation agent)
+-- Proficiency cache (updated when conversation ends)
 create table if not exists public.proficiency (
   user_id text primary key,
-  level text,
-  updated_at timestamptz default now(),
-  data jsonb
+  last_scenario text,
+  last_summary text,
+  updated_at timestamptz default now()
 );
+
+-- Conversation summaries per profile: saved when user ends a conversation.
+-- Used to show history and to build LLM instructions for the next conversation.
+create table if not exists public.conversation_summaries (
+  id uuid primary key default gen_random_uuid(),
+  user_profile_id text not null,
+  scenario_name text,
+  summary text not null,
+  llm_instructions text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_conversation_summaries_profile
+  on public.conversation_summaries (user_profile_id);
+create index if not exists idx_conversation_summaries_created
+  on public.conversation_summaries (created_at desc);
 
 -- Seed 10 profiles (run once)
 insert into public.user_profiles (id, name, level, goals, age_group) values

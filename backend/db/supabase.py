@@ -65,10 +65,70 @@ def get_proficiency(user_id: str) -> dict[str, Any] | None:
 
 
 def upsert_proficiency(user_id: str, data: dict[str, Any]) -> None:
-    """Cache proficiency update."""
+    """Cache proficiency update (last_scenario, last_summary)."""
     client = get_client()
     if client:
         try:
             client.table("proficiency").upsert({"user_id": user_id, **data}).execute()
         except Exception:
             pass
+
+
+# --- Conversation summaries (saved when user ends conversation) ---
+
+def save_conversation_summary(
+    user_profile_id: str,
+    scenario_name: str,
+    summary: str,
+    llm_instructions: str = "",
+) -> None:
+    """Append a conversation summary and LLM instructions for this profile."""
+    client = get_client()
+    if not client or not user_profile_id.strip():
+        return
+    try:
+        client.table("conversation_summaries").insert({
+            "user_profile_id": user_profile_id.strip(),
+            "scenario_name": (scenario_name or "")[:500],
+            "summary": (summary or "")[:8000],
+            "llm_instructions": (llm_instructions or "")[:2000],
+        }).execute()
+    except Exception:
+        pass
+
+
+def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 5) -> str:
+    """Return a single string of previous summaries + latest LLM instructions for use in the next conversation.
+    Empty string if no data. Used to inject into LLM context when starting a new conversation.
+    """
+    client = get_client()
+    if not client or not user_profile_id.strip():
+        return ""
+    try:
+        r = (
+            client.table("conversation_summaries")
+            .select("summary, llm_instructions, scenario_name, created_at")
+            .eq("user_profile_id", user_profile_id.strip())
+            .order("created_at", desc=True)
+            .limit(max_summaries)
+            .execute()
+        )
+        if not r.data:
+            return ""
+        parts = []
+        instructions = []
+        for row in r.data:
+            if row.get("llm_instructions"):
+                instructions.append(row["llm_instructions"])
+            s = row.get("summary", "").strip()
+            scenario = (row.get("scenario_name") or "").strip()
+            if s:
+                parts.append(f"- [{scenario or 'Session'}]: {s[:600]}")
+        out = ""
+        if parts:
+            out = "Previous session summaries (use for continuity):\n" + "\n".join(parts)
+        if instructions:
+            out += "\n\nInstructions for this conversation (follow these): " + instructions[0]
+        return out.strip()
+    except Exception:
+        return ""

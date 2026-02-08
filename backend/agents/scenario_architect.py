@@ -3,7 +3,7 @@ ScenarioArchitect: Builds realistic scenarios from RAG + user profile; pre-decid
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm
+from .llm_helper import call_llm, parse_json_from_llm, truncate_if_needed
 from rag.reddit_retriever import retrieve
 
 
@@ -17,6 +17,22 @@ PREDEFINED_SCENARIOS = [
 ]
 
 
+def _build_rag_query(scenario_hint: str, user_profile: dict, context: dict[str, Any]) -> str:
+    """Build RAG query from scenario + user info + recent conversation so retrieval is relevant to all."""
+    parts = [scenario_hint or "casual informal conversation"]
+    goals = (user_profile.get("goals") or "").strip()
+    if goals:
+        parts.append(goals)
+    history = context.get("conversation_history") or []
+    if history:
+        # Last 2–4 messages (1–2 turns) to capture current topic (e.g. coffee, tea, gaming)
+        recent = history[-4:]
+        topic_bits = [truncate_if_needed(str(m.get("content", "")).strip()) for m in recent if m.get("content")]
+        if topic_bits:
+            parts.append(" ".join(topic_bits))
+    return " ".join(p for p in parts if p).strip() or "casual informal conversation"
+
+
 class ScenarioArchitect:
     def __init__(self):
         pass
@@ -25,15 +41,31 @@ class ScenarioArchitect:
         """Returns (scenario with dialogue_seed), steps for logging."""
         steps = []
         hint = scenario_hint or "casual informal conversation"
-        # RAG: retrieve Reddit chunks (cached)
-        chunks = retrieve(hint, top_k=5, use_cache=True)
-        rag_texts = [c.get("text", "").strip()[:300] for c in chunks if c.get("text")]
+        # RAG: retrieve by scenario + user goals + recent conversation (relevant to current topic)
+        rag_query = _build_rag_query(hint, user_profile, context)
+        chunks = retrieve(rag_query, top_k=5, use_cache=True)
+        rag_texts = [_truncate_if_needed(c.get("text", "").strip()) for c in chunks if c.get("text")]
         rag_context = "\n".join(rag_texts) if rag_texts else ""
 
-        system = "You are a scenario builder for language practice. Output only valid JSON with keys: scenario (string), dialogue_seed (list of 2-3 opening lines). Use informal slang. Keep it short."
-        user = f"Plan: {plan.get('learning_objective', '')}. User level: {user_profile.get('level', 'B1')}. RAG context:\n{rag_context[:800]}\nHint: {hint}. Output JSON only."
-        response, full = call_llm(system, user, "ScenarioArchitect")
-        steps.append({"module": "ScenarioArchitect", "prompt": {"system": system, "user": user}, "response": full})
+        # Scenario text should include the learner's profile so the UI shows a personalized brief
+        name = (user_profile.get("name") or "the learner").strip()
+        level = (user_profile.get("level") or "B1").strip()
+        goals_str = (user_profile.get("goals") or "").strip()
+        profile_brief = f"Learner: {name}, level {level}" + (f", into {goals_str}" if goals_str else "")
+        system = (
+            "You are a scenario builder for language practice. Output only valid JSON with keys: scenario (string), dialogue_seed (list of 2-3 opening lines). "
+            "scenario = 1-2 sentences that describe the setting AND mention the learner (e.g. 'You're at a coffee shop. You're Alex, into gaming and streaming — practice ordering, small talk.'). "
+            "Use informal slang. Keep it short."
+        )
+        plan_full = plan.get("learning_objective") or ""
+        # Truncate only if LLM_PROMPT_MAX_LENGTH env var is set
+        plan_for_llm = truncate_if_needed(plan_full)
+        rag_for_llm = truncate_if_needed(rag_context)
+        user_for_llm = f"{profile_brief}. Hint: {hint}. Plan: {plan_for_llm}. RAG: {rag_for_llm}\nOutput JSON: scenario (1-2 sentences with learner name/interests), dialogue_seed (2-3 lines)."
+        # For logging: always store full prompt so user sees everything
+        user_full = f"{profile_brief}. Hint: {hint}. Plan: {plan_full}. RAG: {rag_context}\nOutput JSON: scenario (1-2 sentences with learner name/interests), dialogue_seed (2-3 lines)."
+        response, full = call_llm(system, user_for_llm, "ScenarioArchitect")
+        steps.append({"module": "ScenarioArchitect", "prompt": {"system": system, "user": user_full, "rag_query": rag_query}, "response": full})
 
         out = parse_json_from_llm(response)
         out.setdefault("scenario", "Casual chat")

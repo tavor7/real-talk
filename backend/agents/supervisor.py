@@ -36,9 +36,8 @@ class SupervisorAgent:
         # 3. UserEvaluation: first agent reply (seed or response to user)
         ctx = {**context, "user_profile": user_profile, "conversation_history": conversation_history}
         if not conversation_history:
-            # Start conversation: use first line of dialogue_seed as "user" so agent gives first reply
-            first_line = scenario_out["dialogue_seed"][0] if scenario_out["dialogue_seed"] else "Hey!"
-            eval_out, steps3 = self.user_eval.run(first_line, scenario_out, ctx)
+            # Start conversation: generate opening line that fits scenario + user profile (no generic "Hey! What's up?")
+            eval_out, steps3 = self.user_eval.run("", scenario_out, ctx, is_first_turn=True)
         else:
             last_user = next((m["content"] for m in reversed(conversation_history) if m.get("role") == "user"), prompt)
             eval_out, steps3 = self.user_eval.run(last_user, scenario_out, ctx)
@@ -58,6 +57,8 @@ class SupervisorAgent:
             final = f"[Scenario: {scenario_out.get('scenario', '')}]\n\n{reply}\n\nYour turn!"
         else:
             final = reply
+        if eval_out.get("summary"):
+            final = f"{final}\n\n[Summary] {eval_out['summary']}"
         if critic_out.get("summary"):
             final = f"{final}\n\n[Summary] {critic_out['summary']}"
-        return final, all_steps
+        return final, all_steps, reply

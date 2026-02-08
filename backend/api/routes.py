@@ -18,6 +18,7 @@ class ExecuteRequest(BaseModel):
     user_profile_id: str | None = None
     scenario: str | None = None
     conversation_history: list[dict] | None = None
+    end_conversation: bool = False
 
 
 # --- GET /api/team_info ---
@@ -74,29 +75,79 @@ def model_architecture():
 def execute(req: ExecuteRequest):
     try:
         from db.supabase import get_user_profiles
+        from agents.user_evaluation import generate_end_conversation
+
         profiles = get_user_profiles()
-        profile = next((p for p in profiles if str(p.get("id")) == str(req.user_profile_id)), profiles[0] if profiles else {})
+        profile = next(
+            (p for p in profiles if str(p.get("id")) == str(req.user_profile_id)),
+            profiles[0] if profiles else {},
+        )
+
+        if req.end_conversation:
+            reply, summary, llm_instructions = generate_end_conversation(
+                profile,
+                req.conversation_history or [],
+                req.scenario or "Casual conversation",
+            )
+            user_id = (req.user_profile_id or profile.get("id") or "").strip()
+            if user_id:
+                try:
+                    from db.supabase import upsert_proficiency, save_conversation_summary
+                    upsert_proficiency(user_id, {
+                        "last_scenario": req.scenario or "Casual conversation",
+                        "last_summary": summary[:2000] if summary else "",
+                    })
+                    save_conversation_summary(
+                        user_id,
+                        req.scenario or "Casual conversation",
+                        summary,
+                        llm_instructions,
+                    )
+                except Exception:
+                    pass
+            final_response = f"{reply}\n\n[Summary] {summary}"
+            return {
+                "status": "ok",
+                "error": None,
+                "response": final_response,
+                "reply": reply,
+                "steps": [{"module": "UserEvaluation", "prompt": {"end_conversation": True}, "response": summary or "(end conversation)"}],
+            }
+
+        # Load previous conversation summaries + LLM instructions for this profile (from Supabase)
+        profile_ctx = ""
+        if req.user_profile_id:
+            try:
+                from db.supabase import get_profile_conversation_context
+                profile_ctx = get_profile_conversation_context(req.user_profile_id)
+            except Exception:
+                pass
         supervisor = SupervisorAgent()
         context = {
             "user_profile_id": req.user_profile_id,
             "user_profile": profile,
             "scenario": req.scenario,
             "conversation_history": req.conversation_history or [],
+            "profile_conversation_context": profile_ctx,
             "steps": [],
         }
-        final_response, steps = supervisor.run(req.prompt, context)
+        final_response, steps, reply = supervisor.run(req.prompt, context)
         # Normalize steps to { module, prompt, response } per spec
         steps_out = []
         for s in steps:
+            resp = s.get("response")
+            if resp is None or (isinstance(resp, str) and not resp.strip()):
+                resp = "(empty or null — no response from this step)"
             steps_out.append({
                 "module": s.get("module", ""),
                 "prompt": s.get("prompt", {}),
-                "response": s.get("response", ""),
+                "response": resp if isinstance(resp, str) else str(resp),
             })
         return {
             "status": "ok",
             "error": None,
-            "response": final_response or "Agent run completed. (Mock response.)",
+            "response": final_response or "No response generated.",
+            "reply": reply or None,  # plain agent message for conversation history (opening line or follow-up)
             "steps": steps_out,
         }
     except Exception as e:
@@ -104,6 +155,7 @@ def execute(req: ExecuteRequest):
             "status": "error",
             "error": str(e),
             "response": None,
+            "reply": None,
             "steps": [],
         }
 
