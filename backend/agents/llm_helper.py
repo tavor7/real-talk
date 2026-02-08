@@ -102,6 +102,20 @@ def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
     Call LLM (OpenAI chat). Returns (response_text, full_response_for_logging).
     If no API key or API returns empty, uses mock so the app keeps working.
     """
+    import sys
+    debug_llm = os.environ.get("DEBUG_LLM", "").strip()
+    
+    # Print prompt for debugging only if DEBUG_LLM=1
+    if debug_llm:
+        print(f"\n{'='*80}", file=sys.stderr)
+        print(f"[DEBUG] {module} - Prompt sent to LLM:", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+        print(f"System prompt ({len(system)} chars):", file=sys.stderr)
+        print(system, file=sys.stderr)
+        print(f"\nUser prompt ({len(user)} chars):", file=sys.stderr)
+        print(user, file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+    
     api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if api_key:
         try:
@@ -135,26 +149,40 @@ def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
             r = do_request()
             text = _extract_content(r)
             # Retry up to 2 times if empty (rate limit or transient failure)
-            for _ in range(2):
+            for retry_num in range(2):
                 if text:
                     break
+                if debug_llm:
+                    print(f"[DEBUG] {module} - Empty response, retrying ({retry_num + 1}/2)...", file=sys.stderr)
                 time.sleep(retry_delay)
                 r = do_request()
                 text = _extract_content(r)
             if not text:
-                if os.environ.get("DEBUG_LLM"):
+                if debug_llm:
                     try:
-                        import sys
                         raw = getattr(r, "model_dump", lambda: None)() if hasattr(r, "model_dump") else str(r)
                         print(f"[DEBUG_LLM] {module} raw response: {raw[:800]}", file=sys.stderr)
                     except Exception:
                         pass
                 fallback = _mock_response(module, "API returned empty content")
+                if debug_llm:
+                    print(f"[DEBUG] {module} - Response: (empty, using fallback)", file=sys.stderr)
+                    print(f"{'='*80}\n", file=sys.stderr)
                 return fallback, f"(LLM returned empty; fallback used)\n\n{fallback}"
+            if debug_llm:
+                print(f"[DEBUG] {module} - Response received ({len(text)} chars):", file=sys.stderr)
+                print(text, file=sys.stderr)  # Print full response, not truncated
+                print(f"{'='*80}\n", file=sys.stderr)
             return text, text
         except Exception as e:
+            if debug_llm:
+                print(f"[DEBUG] {module} - Exception occurred: {e}", file=sys.stderr)
+                print(f"{'='*80}\n", file=sys.stderr)
             mock = _mock_response(module, str(e))
             return mock, mock
+    if debug_llm:
+        print(f"[DEBUG] {module} - No API key, using mock response", file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
     return _mock_response(module, None), _mock_response(module, None)
 
 

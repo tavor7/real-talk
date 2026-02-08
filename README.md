@@ -42,9 +42,23 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API: http://localhost:8000  
-- Docs: http://localhost:8000/docs  
+**After starting the server:**
+
+1. **Open the frontend** – Navigate to http://localhost:8000/app/ in your browser
+2. **Test the API** – Visit http://localhost:8000/docs to see the interactive API documentation (Swagger UI)
+3. **Start a conversation** – In the frontend:
+   - Select a user profile (e.g., Alex, A2 level)
+   - Choose or type a scenario
+   - Click **Run Agent** to begin
+4. **Verify setup** – If you see errors, check:
+   - `.env` file has all required variables (see [Environment variables](#environment-variables-backendenv))
+   - Supabase tables are created (see [Supabase Setup](#supabase-setup))
+   - Pinecone index exists if using RAG (see [RAG](#rag-reddit-data-in-pinecone))
+
+**Available URLs:**
 - Frontend: http://localhost:8000/app/
+- API docs: http://localhost:8000/docs
+- API base: http://localhost:8000
 
 ## API endpoints
 

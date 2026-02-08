@@ -95,19 +95,20 @@ class UserEvaluation:
             system = (
                 "You are a conversation partner talking TO the learner (not as the learner). "
                 "The learner is practicing AS the chosen profile (e.g. Alex, A2 level, into gaming/streaming). "
-                "You are a character in the scenario (e.g. barista, friend, etc.) talking TO them. "
+                "You are someone in the scenario having a casual conversation with them. "
                 "Output only valid JSON with keys: reply (string), summary (null). "
-                "Your reply must be ONE short opening line that STARTS the conversation — say the first thing your character says TO the learner. "
-                "Do NOT say 'I'm Alex' or speak AS the learner. You are talking TO them. Examples: barista says 'Hey {name}! What can I get you?'; friend says 'Yo {name}, grabbing a coffee before your stream?'. "
-                "Do NOT ask 'what do you want to practice' — that breaks the scene."
+                "Your reply must be ONE short opening line that STARTS the conversation — say the first thing you say TO the learner. "
+                "Do NOT say 'I'm Alex' or speak AS the learner. You are talking TO them. "
+                "Do NOT ask 'what do you want to practice' — that breaks the scene. "
+                "Just start a natural, casual conversation based on the scenario."
             )
             user = (
                 f"{previous_block}"
                 f"{CEFR_LEVELS_HELP}\n\n"
                 f"Scenario: {scenario_name}. Learner practicing AS: {name}, level {level}, interests: {goals}. {level_instruction}\n\n"
-                f"You are a character in this scenario (e.g. barista, friend) talking TO {name}. Write the FIRST line you say TO them to start the conversation. "
-                f"Examples: barista says 'Hey {name}! What can I get you today?'; friend says 'Yo {name}, grabbing a coffee before your stream?'. "
-                f"Use their name and/or interests when natural. Use informal slang. You are talking TO them, not AS them.\n\n"
+                f"You are someone in this scenario having a casual conversation with {name}. Write the FIRST line you say TO them to start the conversation. "
+                f"Use their name and/or interests when natural. Use informal slang. You are talking TO them, not AS them. "
+                f"Just have a natural chat based on the scenario — don't act like a service provider unless the scenario specifically calls for it.\n\n"
                 f"{examples_block}{seed_block}Output JSON only: {{\"reply\": \"...\", \"summary\": null}}."
             )
         else:
@@ -115,23 +116,32 @@ class UserEvaluation:
                 "If the user is saying goodbye or the conversation is wrapping up: put a short friendly sign-off in reply and 1-2 sentences of practice tip in summary. Otherwise leave summary as null."
             )
             system = (
-                "You are a conversation partner. Your reply must directly respond to the user's last message and continue the natural flow of the conversation. "
+                "You are a conversation partner talking TO the learner (not as the learner). "
+                "The learner is practicing AS the chosen profile (e.g. Alex, A2 level). "
+                "You are someone in the scenario having a casual conversation with them. "
+                "CRITICAL: You are NOT the learner. Do NOT speak AS the learner or say what the learner would say. "
+                "You are having a natural conversation — respond as yourself, not as a service provider unless the scenario specifically requires it. "
+                "Your reply must directly respond to the user's last message and continue the natural flow of the conversation. "
                 "Key principles: "
                 "1. Stay on the same topic as the user's message — do not change subjects unless they do. "
                 "2. Acknowledge what the user said — if they stated a preference, opinion, or fact, acknowledge it before adding your own. "
                 "3. When the user asks 'and you?' or 'what about you?', answer in the same context they asked (e.g. if they asked about drinks, say what you like to drink; if they asked about plans, say what you'll do). "
                 "4. Keep replies natural and conversational — match the learner's level, use informal slang, and keep it to 1-2 short sentences. "
+                "5. Remember: You are talking TO the learner. The learner speaks AS themselves. Have a natural conversation, not a transaction. "
                 "Output only valid JSON: reply (string), summary (null or string). " + end_instructions
             )
             user = (
                 f"{previous_block}"
                 f"User's last message: \"{user_message}\"\n\n"
+                f"You are someone in this scenario having a casual conversation with {name}. "
+                f"The learner ({name}) is practicing AS this profile. You are NOT the learner. "
                 f"Continue the conversation naturally. Stay on the same topic. If they asked 'and you?' or 'what about you?', answer in the same context. "
-                f"Acknowledge what they said before adding your own response.\n\n"
+                f"Acknowledge what they said before adding your own response. "
+                f"Have a natural chat — don't act like a service provider unless the scenario specifically calls for it.\n\n"
                 f"Setting: {scenario_name}. Learner: {name}, level {level}. {level_instruction}\n\n"
                 f"{examples_block}"
                 f"Dialogue so far:\n{history_str}\n\n"
-                f"Reply to the user's message and continue the conversation flow. Output JSON only."
+                f"Reply to the user's message as yourself talking TO the learner. Do NOT speak as the learner. Output JSON only."
             )
         response, full = call_llm(system, user, "UserEvaluation")
         steps = [{"module": "UserEvaluation", "prompt": {"system": system, "user": user}, "response": full}]

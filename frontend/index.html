@@ -56,17 +56,37 @@
       <div id="finalResponse" class="response-box"></div>
     </section>
 
-    <section id="stepsSection" class="hidden">
-      <h2>Steps trace (module → prompt → response)</h2>
-      <div id="stepsTrace" class="steps-box"></div>
-    </section>
-
     <section id="summarySection" class="hidden">
       <h2>Conversation summary & evaluation</h2>
       <div id="summaryContent" class="summary-box"></div>
     </section>
+
+    <section id="stepsSection" class="hidden">
+      <h2>Steps trace (module → prompt → response)</h2>
+      <div id="stepsTrace" class="steps-box"></div>
+    </section>
   </main>
 
-  <script src="app.js"></script>
+  <script>
+    console.log("[HTML] Script tag reached - HTML is loading app.js");
+    window.addEventListener('error', function(e) {
+      console.error("[HTML] JavaScript error:", e.message, e.filename, e.lineno, e.error);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      console.error("[HTML] Unhandled promise rejection:", e.reason);
+    });
+  </script>
+  <script src="app.js?v=3" onerror="console.error('[HTML] Failed to load app.js!')" onload="console.log('[HTML] app.js loaded successfully')"></script>
+  <script>
+    setTimeout(function() {
+      console.log("[HTML] After app.js (delayed check) - checking if function exists:", typeof window.endConversation);
+      if (typeof window.endConversation === 'function') {
+        console.log("[HTML] ✓ window.endConversation is available!");
+      } else {
+        console.error("[HTML] ✗ window.endConversation is NOT available! Type:", typeof window.endConversation);
+        console.error("[HTML] Available on window:", Object.keys(window).filter(k => k.includes('end') || k.includes('Conversation')));
+      }
+    }, 100);
+  </script>
 </body>
 </html>

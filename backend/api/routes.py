@@ -73,6 +73,7 @@ def model_architecture():
 # --- POST /api/execute (main entry) ---
 @router.post("/execute")
 def execute(req: ExecuteRequest):
+    print(f"\n[BACKEND] /api/execute called - end_conversation: {req.end_conversation}")
     try:
         from db.supabase import get_user_profiles
         from agents.user_evaluation import generate_end_conversation
@@ -84,27 +85,44 @@ def execute(req: ExecuteRequest):
         )
 
         if req.end_conversation:
+            print("\n" + "="*80)
+            print("[BACKEND] End conversation request received")
+            print(f"[BACKEND] User profile ID: {req.user_profile_id}")
+            print(f"[BACKEND] Scenario: {req.scenario}")
+            print(f"[BACKEND] Conversation history length: {len(req.conversation_history or [])}")
+            print("="*80)
+            
             reply, summary, llm_instructions = generate_end_conversation(
                 profile,
                 req.conversation_history or [],
                 req.scenario or "Casual conversation",
             )
+            
+            print(f"[BACKEND] Generated reply: {reply[:100]}...")
+            print(f"[BACKEND] Summary length: {len(summary)} chars")
+            print(f"[BACKEND] LLM instructions length: {len(llm_instructions)} chars")
+            print("="*80 + "\n")
             user_id = (req.user_profile_id or profile.get("id") or "").strip()
             if user_id:
                 try:
                     from db.supabase import upsert_proficiency, save_conversation_summary
+                    print(f"[BACKEND] Saving to Supabase for user_id: {user_id}")
                     upsert_proficiency(user_id, {
                         "last_scenario": req.scenario or "Casual conversation",
                         "last_summary": summary[:2000] if summary else "",
                     })
+                    print(f"[BACKEND] ✓ Proficiency saved to Supabase")
                     save_conversation_summary(
                         user_id,
                         req.scenario or "Casual conversation",
                         summary,
                         llm_instructions,
                     )
-                except Exception:
-                    pass
+                    print(f"[BACKEND] ✓ Conversation summary saved to Supabase")
+                except Exception as e:
+                    print(f"[BACKEND] ✗ Error saving to Supabase: {e}")
+                    import traceback
+                    traceback.print_exc()
             final_response = f"{reply}\n\n[Summary] {summary}"
             return {
                 "status": "ok",
@@ -119,9 +137,17 @@ def execute(req: ExecuteRequest):
         if req.user_profile_id:
             try:
                 from db.supabase import get_profile_conversation_context
+                print(f"\n[BACKEND] Loading conversation context from Supabase for user_profile_id: {req.user_profile_id}")
                 profile_ctx = get_profile_conversation_context(req.user_profile_id)
-            except Exception:
-                pass
+                if profile_ctx:
+                    print(f"[BACKEND] ✓ Loaded conversation context ({len(profile_ctx)} chars)")
+                    print(f"[BACKEND] Context preview: {profile_ctx[:200]}...")
+                else:
+                    print(f"[BACKEND] No previous conversation context found")
+            except Exception as e:
+                print(f"[BACKEND] ✗ Error loading conversation context: {e}")
+                import traceback
+                traceback.print_exc()
         supervisor = SupervisorAgent()
         context = {
             "user_profile_id": req.user_profile_id,

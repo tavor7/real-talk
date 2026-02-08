@@ -55,8 +55,9 @@ class ScenarioArchitect:
         system = (
             "You are a scenario builder for language practice. Output only valid JSON with keys: scenario (string), dialogue_seed (list of 2-3 opening lines). "
             "scenario = 1-2 sentences describing the setting. The learner is practicing AS the chosen profile (e.g. Alex, A2 level, into gaming/streaming). "
-            "The agent will talk TO the learner (e.g. as a barista, friend, etc.). Example: 'You're practicing as Alex at a coffee shop. Practice ordering drinks, small talk about gaming/streaming, and casual conversation.' "
-            "Use informal slang. Keep it short."
+            "The agent will talk TO the learner as a casual conversation partner in this setting. "
+            "Example: 'You're practicing as Alex at a coffee shop. Have a casual chat about drinks, gaming/streaming, and everyday topics.' "
+            "Use informal slang. Keep it short. Focus on natural conversation, not service transactions."
         )
         plan_full = plan.get("learning_objective") or ""
         # Truncate only if LLM_PROMPT_MAX_LENGTH env var is set

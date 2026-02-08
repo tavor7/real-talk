@@ -13,12 +13,24 @@ def get_client():
     if _client is None:
         url = (os.environ.get("SUPABASE_URL") or "").strip()
         key = (os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_ANON_KEY") or "").strip()
+        print(f"[Supabase] Checking configuration - URL: {'set' if url else 'NOT SET'}, Key: {'set' if key else 'NOT SET'}")
         if url and key:
             try:
                 from supabase import create_client
+                print(f"[Supabase] Creating client with URL: {url[:50]}...")
                 _client = create_client(url, key)
-            except Exception:
+                print(f"[Supabase] ✓ Client created successfully")
+            except ImportError as e:
+                print(f"[Supabase] ✗ Import error: supabase package not installed. Run: pip install supabase")
+                _client = False
+            except Exception as e:
+                print(f"[Supabase] ✗ Error creating client: {e}")
+                import traceback
+                traceback.print_exc()
                 _client = False  # mark as attempted so we don't retry every time
+        else:
+            print(f"[Supabase] ✗ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY/SUPABASE_ANON_KEY")
+            _client = False
     return _client if _client is not False else None
 
 
@@ -69,9 +81,13 @@ def upsert_proficiency(user_id: str, data: dict[str, Any]) -> None:
     client = get_client()
     if client:
         try:
-            client.table("proficiency").upsert({"user_id": user_id, **data}).execute()
-        except Exception:
-            pass
+            result = client.table("proficiency").upsert({"user_id": user_id, **data}).execute()
+            print(f"[Supabase] Proficiency upserted for user_id: {user_id}")
+        except Exception as e:
+            print(f"[Supabase] Error upserting proficiency: {e}")
+            raise
+    else:
+        print(f"[Supabase] No client available (SUPABASE_URL or SUPABASE_SERVICE_KEY not set)")
 
 
 # --- Conversation summaries (saved when user ends conversation) ---
@@ -84,17 +100,23 @@ def save_conversation_summary(
 ) -> None:
     """Append a conversation summary and LLM instructions for this profile."""
     client = get_client()
-    if not client or not user_profile_id.strip():
+    if not client:
+        print(f"[Supabase] No client available (SUPABASE_URL or SUPABASE_SERVICE_KEY not set)")
+        return
+    if not user_profile_id.strip():
+        print(f"[Supabase] Empty user_profile_id, skipping save")
         return
     try:
-        client.table("conversation_summaries").insert({
+        result = client.table("conversation_summaries").insert({
             "user_profile_id": user_profile_id.strip(),
             "scenario_name": (scenario_name or "")[:500],
             "summary": (summary or "")[:8000],
             "llm_instructions": (llm_instructions or "")[:2000],
         }).execute()
-    except Exception:
-        pass
+        print(f"[Supabase] Conversation summary saved for user_profile_id: {user_profile_id.strip()}")
+    except Exception as e:
+        print(f"[Supabase] Error saving conversation summary: {e}")
+        raise
 
 
 def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 5) -> str:
@@ -102,9 +124,14 @@ def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 
     Empty string if no data. Used to inject into LLM context when starting a new conversation.
     """
     client = get_client()
-    if not client or not user_profile_id.strip():
+    if not client:
+        print(f"[Supabase] No client available, cannot load conversation context")
+        return ""
+    if not user_profile_id.strip():
+        print(f"[Supabase] Empty user_profile_id, cannot load conversation context")
         return ""
     try:
+        print(f"[Supabase] Querying conversation_summaries for user_profile_id: {user_profile_id.strip()}")
         r = (
             client.table("conversation_summaries")
             .select("summary, llm_instructions, scenario_name, created_at")
@@ -114,7 +141,9 @@ def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 
             .execute()
         )
         if not r.data:
+            print(f"[Supabase] No conversation summaries found for user_profile_id: {user_profile_id.strip()}")
             return ""
+        print(f"[Supabase] Found {len(r.data)} conversation summary(ies)")
         parts = []
         instructions = []
         for row in r.data:
@@ -129,6 +158,11 @@ def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 
             out = "Previous session summaries (use for continuity):\n" + "\n".join(parts)
         if instructions:
             out += "\n\nInstructions for this conversation (follow these): " + instructions[0]
-        return out.strip()
-    except Exception:
+        result = out.strip()
+        print(f"[Supabase] ✓ Conversation context built ({len(result)} chars)")
+        return result
+    except Exception as e:
+        print(f"[Supabase] Error loading conversation context: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
