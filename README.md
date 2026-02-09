@@ -69,6 +69,160 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | POST | /api/execute | Main entry: `{"prompt": "...", "user_profile_id": "...", "scenario": "...", "conversation_history": [], "end_conversation": false}`<br>Set `end_conversation: true` to end conversation and get summary. Returns `reply` (plain message) and `response` (full with summary). |
 | GET | /api/user_profiles | List of user profiles (10 predefined) |
 
+### API Usage Examples
+
+**GET /api/team_info**
+```bash
+curl http://localhost:8000/api/team_info
+```
+Returns:
+```json
+{
+  "group_batch_order_number": "1_1",
+  "team_name": "RealTalk Team",
+  "students": [
+    {"name": "Amit Tavor", "email": "amit.tavor@campus.technion.ac.il"},
+    {"name": "Sagie Dekel", "email": "sagie.dekel@campus.technion.ac.il"},
+    {"name": "Itay Nulman", "email": "itai.nulman@campus.technion.ac.il"}
+  ]
+}
+```
+
+**GET /api/agent_info**
+```bash
+curl http://localhost:8000/api/agent_info
+```
+Returns agent description, purpose, prompt template, and examples with steps.
+
+**GET /api/model_architecture**
+```bash
+curl http://localhost:8000/api/model_architecture -o architecture.png
+```
+Returns PNG image of the architecture diagram.
+
+**GET /api/user_profiles**
+```bash
+curl http://localhost:8000/api/user_profiles
+```
+Returns list of 10 predefined user profiles.
+
+**POST /api/execute** (Main Entry Point)
+
+Minimal request (only `prompt` required):
+```bash
+curl -X POST http://localhost:8000/api/execute \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "I want to practice ordering coffee"}'
+```
+
+Full request with all fields:
+```bash
+curl -X POST http://localhost:8000/api/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Hey, what do you recommend?",
+    "user_profile_id": "1",
+    "scenario": "Coffee shop conversation",
+    "conversation_history": [
+      {"role": "user", "content": "Hi!"},
+      {"role": "assistant", "content": "Hey! Welcome to the cafe."}
+    ],
+    "end_conversation": false
+  }'
+```
+
+End conversation request:
+```bash
+curl -X POST http://localhost:8000/api/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "",
+    "user_profile_id": "1",
+    "scenario": "Coffee shop",
+    "conversation_history": [...],
+    "end_conversation": true
+  }'
+```
+
+**Request Fields:**
+- `prompt` (required): User's message or request
+- `user_profile_id` (optional): Profile ID from `/api/user_profiles`. If omitted, uses first available profile.
+- `scenario` (optional): Conversation scenario. If omitted, uses "Casual conversation".
+- `conversation_history` (optional): List of previous messages. Format: `[{"role": "user"/"assistant", "content": "..."}]`. If omitted, uses empty list.
+- `end_conversation` (optional): Set to `true` to end conversation and get summary. Defaults to `false`.
+
+**Success Response:**
+```json
+{
+  "status": "ok",
+  "error": null,
+  "response": "Final agent response text...",
+  "reply": "Plain message for conversation history",
+  "steps": [
+    {
+      "module": "SupervisorAgent",
+      "prompt": {...},
+      "response": "..."
+    },
+    {
+      "module": "ProgramPlanner",
+      "prompt": {...},
+      "response": "..."
+    }
+  ]
+}
+```
+
+**Error Response:**
+```json
+{
+  "status": "error",
+  "error": "Error message here",
+  "response": null,
+  "reply": null,
+  "steps": []
+}
+```
+
+**Interactive API Documentation:**
+Visit http://localhost:8000/docs for Swagger UI with interactive testing.
+
+## User Profiles
+
+The system includes 10 predefined user profiles with different proficiency levels and goals:
+
+| ID | Name | Level | Goals | Age Group |
+|----|------|-------|-------|-----------|
+| 1 | Alex | A2 | gaming, streaming | 18-25 |
+| 2 | Maria | B1 | travel, TikTok | 25-35 |
+| 3 | Jordan | B2 | work meetings, slang | 30-40 |
+| 4 | Sam | A1 | basics, memes | 16-22 |
+| 5 | Casey | C1 | native-like informal | 28-35 |
+| 6 | Riley | A2 | dating app, friends | 20-28 |
+| 7 | Taylor | B1 | podcasts, Reddit | 22-30 |
+| 8 | Morgan | B2 | gaming voice chat | 18-26 |
+| 9 | Quinn | A2 | travel, casual chat | 25-35 |
+| 10 | Jamie | B1 | social media, slang | 19-27 |
+
+**CEFR Levels:**
+- **A1/A2**: Beginner (basic vocabulary, simple sentences)
+- **B1/B2**: Intermediate (can handle most everyday situations, some complex topics)
+- **C1**: Advanced (near-native fluency, complex topics)
+
+## Predefined Scenarios
+
+The system includes 5 predefined scenarios for quick start:
+
+| ID | Name | Description |
+|----|------|-------------|
+| coffee | Casual chat at a coffee shop | Practice small talk and ordering at a coffee shop |
+| gaming | Arguing about a game with a friend | Practice gaming slang and friendly disagreements |
+| party | Meeting someone at a party | Practice introductions and casual party conversation |
+| streaming | Talking like a streamer to viewers | Practice streaming slang and viewer interaction |
+| diner | Ordering food at a casual diner | Practice ordering food with casual slang |
+
+**Custom Scenarios:** You can also type your own scenario (e.g., "Practice job interview", "Chat about movies", etc.). The agent will adapt the conversation to your custom scenario.
+
 ## Frontend
 
 1. Select a user profile (e.g. Alex, A2 level, into gaming/streaming).

@@ -133,10 +133,17 @@ window.endConversation = async function endConversation() {
 
     if (data.status === "error") {
       document.getElementById("finalResponse").textContent = "Error: " + (data.error || "Unknown");
+      // Render request/response fields even on error
+      renderRequestResponseFields(requestBody, data);
+      showSection("requestResponseSection");
       setRequestInProgress(false);
       endBtn.textContent = "End conversation";
       return;
     }
+
+    // Render request/response fields
+    renderRequestResponseFields(requestBody, data);
+    showSection("requestResponseSection");
 
     const reply = data.reply != null ? data.reply : (data.response || "").split("\n\n[Summary]")[0];
     conversationHistory.push({ role: "assistant", content: reply });
@@ -280,11 +287,14 @@ function resetConversation() {
   if (box) box.innerHTML = "";
   document.getElementById("finalResponse").textContent = "";
   document.getElementById("summaryContent").textContent = "Complete a conversation and end it to see summary & evaluation.";
+  document.getElementById("requestFields").innerHTML = "";
+  document.getElementById("responseFields").innerHTML = "";
   setConversationEndedUI(false);
   setRequestInProgress(false);
   hideSection("responseSection");
   hideSection("summarySection");
   hideSection("stepsSection");
+  hideSection("requestResponseSection");
   showSection("chatSection");
 }
 
@@ -311,6 +321,16 @@ function renderSteps(steps) {
     box.textContent = "No steps logged.";
     return;
   }
+  
+  // Agent descriptions
+  const agentDescriptions = {
+    "SupervisorAgent": "Orchestrates flow, decides sub-agent, aggregates response",
+    "ProgramPlanner": "Plan & Execute: learning objective, conversation structure",
+    "SystemCritic": "Reflection: reviews dialogue, slang/safety/level, decides when to finish",
+    "ScenarioArchitect": "Builds scenarios from RAG + user profile; predefined scenarios for fast start",
+    "UserEvaluation": "ReAct: interacts during conversation, adapts difficulty, updates proficiency, produces summary"
+  };
+  
   box.innerHTML = steps
     .map((s) => {
       const promptStr = typeof s.prompt === "object" ? JSON.stringify(s.prompt, null, 2) : String(s.prompt || "");
@@ -319,9 +339,13 @@ function renderSteps(steps) {
       const responseDisplay = responseStr.trim() === "" ? "(empty or null — no response from this step)" : responseStr;
       const promptLen = promptStr.length;
       const responseLen = responseDisplay.length;
+      const agentDesc = agentDescriptions[s.module] || "";
       return `
     <div class="step">
-      <div class="module">${escapeHtml(s.module)}</div>
+      <div class="module">
+        <span class="module-name">${escapeHtml(s.module)}</span>
+        ${agentDesc ? `<span class="module-description">${escapeHtml(agentDesc)}</span>` : ""}
+      </div>
       <details class="step-details" open>
         <summary style="white-space: normal; word-break: break-word; display: block;">Prompt (${promptLen} chars) — click to collapse</summary>
         <pre class="step-full">${escapeHtml(promptStr)}</pre>
@@ -331,6 +355,57 @@ function renderSteps(steps) {
         <pre class="step-full">${escapeHtml(responseDisplay)}</pre>
       </details>
     </div>`;
+    })
+    .join("");
+}
+
+function renderRequestResponseFields(requestData, responseData) {
+  const requestBox = document.getElementById("requestFields");
+  const responseBox = document.getElementById("responseFields");
+  
+  if (!requestBox || !responseBox) return;
+  
+  // Render request fields
+  const requestFields = [
+    { label: "prompt", value: requestData.prompt || "(empty)", fullValue: requestData.prompt || "(empty)" },
+    { label: "user_profile_id", value: requestData.user_profile_id || "(not set)", fullValue: requestData.user_profile_id || "(not set)" },
+    { label: "scenario", value: requestData.scenario || "(not set)", fullValue: requestData.scenario || "(not set)" },
+    { label: "conversation_history", value: requestData.conversation_history ? `${requestData.conversation_history.length} message(s)` : "[] (empty)", fullValue: JSON.stringify(requestData.conversation_history || [], null, 2) },
+    { label: "end_conversation", value: requestData.end_conversation ? "true" : "false", fullValue: String(requestData.end_conversation || false) },
+  ];
+  
+  requestBox.innerHTML = requestFields
+    .map(f => {
+      const displayValue = f.value.length > 100 ? f.value.substring(0, 100) + "..." : f.value;
+      return `
+      <div class="field-item">
+        <strong>${escapeHtml(f.label)}:</strong>
+        <div class="field-value">${escapeHtml(displayValue)}</div>
+        ${f.fullValue.length > 100 ? `<details><summary>Show full value</summary><pre class="field-full-value">${escapeHtml(f.fullValue)}</pre></details>` : ""}
+      </div>
+    `;
+    })
+    .join("");
+  
+  // Render response fields
+  const responseFields = [
+    { label: "status", value: responseData.status || "(not set)", fullValue: responseData.status || "(not set)" },
+    { label: "error", value: responseData.error || "null", fullValue: responseData.error || "null" },
+    { label: "response", value: responseData.response ? `${responseData.response.length} chars` : "null", fullValue: responseData.response || "null" },
+    { label: "reply", value: responseData.reply ? `${responseData.reply.length} chars` : "null", fullValue: responseData.reply || "null" },
+    { label: "steps", value: responseData.steps ? `${responseData.steps.length} step(s)` : "[] (empty)", fullValue: JSON.stringify(responseData.steps || [], null, 2) },
+  ];
+  
+  responseBox.innerHTML = responseFields
+    .map(f => {
+      const displayValue = f.value.length > 100 ? f.value.substring(0, 100) + "..." : f.value;
+      return `
+      <div class="field-item">
+        <strong>${escapeHtml(f.label)}:</strong>
+        <div class="field-value">${escapeHtml(displayValue)}</div>
+        ${f.fullValue.length > 100 ? `<details><summary>Show full value</summary><pre class="field-full-value">${escapeHtml(f.fullValue)}</pre></details>` : ""}
+      </div>
+    `;
     })
     .join("");
 }
@@ -357,18 +432,25 @@ async function runAgent() {
   showChatLoading(true);
   await new Promise(requestAnimationFrame);
 
+  const requestBody = {
+    prompt,
+    user_profile_id: profileId,
+    scenario,
+    conversation_history: [],
+    end_conversation: false,
+  };
+
   try {
     const res = await fetch(`${API_BASE}/api/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        user_profile_id: profileId,
-        scenario,
-        conversation_history: [],
-      }),
+      body: JSON.stringify(requestBody),
     });
     const data = await res.json();
+
+    // Render request/response fields
+    renderRequestResponseFields(requestBody, data);
+    showSection("requestResponseSection");
 
     if (data.status === "error") {
       document.getElementById("finalResponse").textContent = "Error: " + (data.error || "Unknown");
@@ -481,19 +563,26 @@ async function sendMessage() {
   showChatLoading(true);
   await new Promise(requestAnimationFrame);
 
+  const requestBody = {
+    prompt: text,
+    user_profile_id: profileId,
+    scenario,
+    conversation_history: conversationHistory.slice(0, -1),
+    end_conversation: false,
+  };
+
   try {
     const res = await fetch(`${API_BASE}/api/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: text,
-        user_profile_id: profileId,
-        scenario,
-        conversation_history: conversationHistory.slice(0, -1),
-      }),
+      body: JSON.stringify(requestBody),
     });
     const data = await res.json();
     showChatLoading(false);
+
+    // Render request/response fields
+    renderRequestResponseFields(requestBody, data);
+    showSection("requestResponseSection");
 
     if (data.status === "ok" && data.response) {
       // Store plain agent reply in history so the next turn has clean dialogue (opening line or follow-up)

@@ -205,6 +205,78 @@ button.secondary:disabled {
   display: none !important;
 }
 
+.request-response-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 10px;
+}
+
+.request-response-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.request-response-col h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: var(--text);
+  font-size: 1.1em;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 5px;
+}
+
+.fields-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.field-item strong {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 5px;
+  font-size: 0.9em;
+}
+
+.field-value {
+  color: var(--text);
+  word-break: break-word;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  margin-top: 5px;
+}
+
+.field-full-value {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  font-size: 0.85em;
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .request-response-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chat-box, .response-box, .steps-box, .summary-box {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -269,6 +341,25 @@ button.secondary:disabled {
 .steps-box .step .module {
   font-weight: 600;
   color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.steps-box .step .module-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+
+.steps-box .step .module-description {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .steps-box .step-details {
