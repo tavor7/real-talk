@@ -30,9 +30,6 @@ Autonomous AI agent for language schools: simulates realistic slang-based conver
 | `LLM_PROMPT_MAX_LENGTH` | Optional. If set (e.g. `2000`), prompts longer than this are truncated before sending to LLM. If not set, full prompts are sent. |
 | `LLM_MAX_TOKENS` | Optional. If set (e.g. `2000`), LLM responses are capped at this token count. If not set, no limit (uses model default, typically 4096+). |
 
-**What is SUPABASE_SERVICE_KEY?**  
-In Supabase: **Project Settings → API** you see two keys: **anon (public)** and **service_role (secret)**. The **service_role** key is the one to put in `SUPABASE_SERVICE_KEY`. It gives your backend full access and bypasses Row Level Security, so use it only on the server and never in the browser.
-
 ## Run locally
 
 ```bash
