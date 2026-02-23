@@ -47,22 +47,86 @@ def parse_json_from_llm(response: str) -> dict:
     start = text.find("{")
     if start != -1:
         depth = 0
+        in_string = False
+        escape = False
+        quote_char = None
         for i in range(start, len(text)):
-            if text[i] == "{":
-                depth += 1
-            elif text[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(text[start : i + 1])
-                    except json.JSONDecodeError:
-                        break
+            c = text[i]
+            if escape:
+                escape = False
+                continue
+            if c == "\\" and in_string:
+                escape = True
+                continue
+            if not in_string and (c == '"' or c == "'"):
+                in_string = True
+                quote_char = c
+                continue
+            if in_string and c == quote_char:
+                in_string = False
+                continue
+            if not in_string:
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start : i + 1])
+                        except json.JSONDecodeError:
+                            break
     if text.startswith("{"):
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
     return {}
+
+
+def extract_reply_from_llm_response(text: str) -> str:
+    """When parse_json_from_llm fails or reply is empty, try to extract reply from raw LLM output.
+    Handles malformed JSON and model output that duplicates ANSWER: {\"reply\": \"...\"} inside the reply."""
+    if not text or not text.strip():
+        return ""
+    text = text.strip()
+    # Take the last ANSWER: section so we get the actual answer block (model may put reasoning first)
+    if " ANSWER:" in text or " answer:" in text.lower():
+        match = re.search(r"(?:ANSWER|answer)\s*:\s*([\s\S]*)$", text, re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+    # Try to find "reply" : "value" (value can contain escaped quotes \")
+    m = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+    if m:
+        raw = m.group(1)
+        try:
+            return json.loads('"' + raw + '"')
+        except Exception:
+            pass
+        return raw.replace('\\"', '"').replace("\\n", "\n").strip()
+    # Simpler pattern when value has no internal quotes
+    m = re.search(r'"reply"\s*:\s*"([^"]*)"', text)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _normalize_content(content: Any) -> str:
+    """Turn content into a single string; some APIs return a list of parts (e.g. [{\"type\": \"text\", \"text\": \"...\"}])."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                t = part.get("text") or part.get("content")
+                if t:
+                    parts.append(str(t))
+            else:
+                parts.append(str(part))
+        return " ".join(parts).strip()
+    return str(content).strip()
 
 
 def _extract_content(r: Any) -> str:
@@ -76,47 +140,55 @@ def _extract_content(r: Any) -> str:
         msg = choice.get("message") if isinstance(choice, dict) else getattr(choice, "message", None)
         if isinstance(msg, dict):
             content = msg.get("content") or msg.get("text")
-            if content and str(content).strip():
-                return str(content).strip()
+            out = _normalize_content(content)
+            if out:
+                return out
         if isinstance(choice, dict):
             content = choice.get("content") or choice.get("text")
-            if content and str(content).strip():
-                return str(content).strip()
+            out = _normalize_content(content)
+            if out:
+                return out
         return ""
 
     if not r or not getattr(r, "choices", None) or not r.choices:
         return ""
     choice = r.choices[0]
     msg = getattr(choice, "message", None)
-    # Standard: choices[0].message.content
     if msg is not None:
         content = getattr(msg, "content", None)
-        if content is not None and str(content).strip():
-            return str(content).strip()
+        if content is not None:
+            out = _normalize_content(content)
+            if out:
+                return out
         if hasattr(msg, "model_dump"):
             d = msg.model_dump()
             content = d.get("content") or d.get("text")
-            if content and str(content).strip():
-                return str(content).strip()
+            out = _normalize_content(content)
+            if out:
+                return out
         if isinstance(msg, dict):
             content = msg.get("content") or msg.get("text")
-            if content and str(content).strip():
-                return str(content).strip()
-    # Some providers: choices[0].text
+            out = _normalize_content(content)
+            if out:
+                return out
     text = getattr(choice, "text", None)
     if text is not None and str(text).strip():
         return str(text).strip()
     return ""
 
 
-def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
+def call_llm(system: str, user: str, module: str, max_tokens_override: int | None = None) -> tuple[str, str]:
     """
     Call LLM (OpenAI chat). Returns (response_text, full_response_for_logging).
-    If no API key or API returns empty, uses mock so the app keeps working.
+    max_tokens_override: if set, caps output tokens for faster short replies (e.g. 256 for ConversationPartner).
     """
     import sys
     debug_llm = os.environ.get("DEBUG_LLM", "").strip()
-    
+    max_tokens = max_tokens_override
+    if max_tokens is None:
+        mt = os.environ.get("LLM_MAX_TOKENS", "").strip()
+        max_tokens = int(mt) if mt else None
+
     # Print prompt for debugging only if DEBUG_LLM=1
     if debug_llm:
         print(f"\n{'='*80}", file=sys.stderr)
@@ -135,37 +207,30 @@ def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
             base_url = (os.environ.get("OPENAI_BASE_URL") or "").strip() or None
             client = OpenAI(api_key=api_key, base_url=base_url)
             def do_request():
-                # max_tokens: use env var if set, else None (no limit, use model default)
-                max_tokens_str = os.environ.get("LLM_MAX_TOKENS", "").strip()
-                max_tokens = int(max_tokens_str) if max_tokens_str else None
                 kwargs = {
                     "model": (os.environ.get("OPENAI_MODEL") or "gpt-4o-mini").strip(),
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 }
-                if max_tokens:
+                if max_tokens is not None:
                     kwargs["max_tokens"] = max_tokens
                 return client.chat.completions.create(**kwargs)
 
-            # Space out requests so provider rate limit doesn't return empty (e.g. llmod.ai)
-            # ScenarioArchitect and SystemCritic often get empty (2nd and 4th calls), so extra delay
-            if module == "ScenarioArchitect":
-                delay = 1.2
-                retry_delay = 1.5
-            elif module == "SystemCritic":
-                delay = 1.0
-                retry_delay = 1.5
-            else:
-                delay = 0.5
-                retry_delay = 1.0
-            time.sleep(delay)
+            # Optional pre-request delay to avoid provider rate limits (empty content). Set LLM_REQUEST_DELAY=0.2 if you see empty responses.
+            delay_str = os.environ.get("LLM_REQUEST_DELAY", "").strip()
+            if delay_str:
+                try:
+                    time.sleep(float(delay_str))
+                except ValueError:
+                    pass
+            retry_delay = 0.6  # seconds when retrying after empty response (rate limit / transient)
             r = do_request()
             text = _extract_content(r)
-            # Retry up to 2 times if empty (rate limit or transient failure)
-            for retry_num in range(2):
+            # Retry up to 3 times if empty (rate limit or transient failure)
+            for retry_num in range(3):
                 if text:
                     break
                 if debug_llm:
-                    print(f"[DEBUG] {module} - Empty response, retrying ({retry_num + 1}/2)...", file=sys.stderr)
+                    print(f"[DEBUG] {module} - Empty response, retrying ({retry_num + 1}/3)...", file=sys.stderr)
                 time.sleep(retry_delay)
                 r = do_request()
                 text = _extract_content(r)

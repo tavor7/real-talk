@@ -590,9 +590,18 @@ async function sendMessage() {
     showSection("requestResponseSection");
 
     if (data.status === "ok" && data.response) {
-      // Store plain agent reply in history so the next turn has clean dialogue (opening line or follow-up)
+      // Store plain agent reply in history (wrap-up message or normal reply)
       conversationHistory.push({ role: "assistant", content: data.reply != null ? data.reply : data.response });
-      if (data.response.includes("[Summary]")) {
+      if (data.conversation_ended) {
+        // Critic (or backend) ended the conversation: show summary and end UI
+        lastSummary = data.response;
+        conversationEnded = true;
+        setConversationEndedUI(true);
+        if (document.getElementById("summaryContent")) {
+          document.getElementById("summaryContent").textContent = lastSummary;
+        }
+        showSection("summarySection");
+      } else if (data.response.includes("[Summary]")) {
         const idx = data.response.indexOf("[Summary]");
         lastSummary = data.response.slice(idx);
       }
@@ -606,7 +615,7 @@ async function sendMessage() {
     if (lastSummary) {
       document.getElementById("summaryContent").textContent = lastSummary;
     }
-    // Ensure end conversation button is enabled after sending a message
+    // Ensure end conversation button is enabled after sending a message (unless conversation ended)
     const endBtn = document.getElementById("endConversationBtn");
     if (endBtn && !conversationEnded && !requestInProgress) {
       endBtn.disabled = false;

@@ -4,7 +4,7 @@ Talks TO the learner as a conversation partner in the scenario.
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, extract_reply_from_llm_response
 
 
 def _level_instruction(level: str) -> str:
@@ -29,14 +29,16 @@ class ConversationPartner:
         """Generate conversational response based on scenario and user input.
         Returns (reply_dict, steps) where reply_dict has 'reply' key."""
         history = context.get("conversation_history", [])
-        history_str = "\n".join([f"{m.get('role','')}: {m.get('content','')}" for m in history[-6:]])
+        # Use last 4 messages (2 exchanges) to keep prompt smaller and faster
+        history_str = "\n".join([f"{m.get('role','')}: {m.get('content','')}" for m in history[-4:]])
         profile = context.get("user_profile") or {}
         level = profile.get("level", "B1")
         rag_examples = scenario.get("rag_examples") or []
 
         examples_block = ""
         if rag_examples:
-            examples_block = "Example authentic style (use similar tone):\n" + "\n".join(f"- {ex}" for ex in rag_examples[:5]) + "\n\n"
+            # Cap at 3 examples to reduce tokens and latency
+            examples_block = "Example authentic style (use similar tone):\n" + "\n".join(f"- {ex}" for ex in rag_examples[:3]) + "\n\n"
 
         scenario_name = scenario.get("scenario", "")
         level_instruction = _level_instruction(level)
@@ -60,9 +62,7 @@ class ConversationPartner:
                 "1. Understand the scenario setting\n"
                 "2. Consider how to naturally OPEN the conversation\n"
                 "3. Choose an opening that matches the level and setting\n"
-                "4. Use informal, authentic slang\n\n"
                 "Output only valid JSON with key: reply (string). "
-                "Your reply must be ONE short opening line that STARTS the conversation naturally. "
                 "At the end, add: ANSWER: {json output}"
             )
             user = (
@@ -73,36 +73,24 @@ class ConversationPartner:
                 f"{examples_block}At the end, extract: ANSWER: {{\"reply\": \"...\"}}"
             )
         else:
+            critic_block = ""
+            if context.get("critic_feedback"):
+                critic_block = (
+                    "Feedback from dialogue reviewer (use this to guide your response): "
+                    f"{context.get('critic_feedback')}\n\n"
+                )
             system = (
-                "You are a conversation partner having a casual conversation. \n\n"
-                "Think through these steps:\n"
-                "1. READ the user's message carefully\n"
-                "2. IDENTIFY the topic or intent (question, statement, opinion, etc.)\n"
-                "3. CHOOSE how to respond (answer question, acknowledge opinion, build on statement)\n"
-                "4. CRAFT a natural, casual 1-2 sentence reply using informal slang\n"
-                "5. STAY in scenario context\n\n"
-                "CRITICAL RULES: "
-                "- YOUR RESPONSE MUST directly address what the user said\n"
-                "- Do NOT give a generic response\n"
-                "- If they ask a question, answer it. If they share opinion, acknowledge it. If they make statement, respond to it.\n"
-                "- Keep replies natural, casual, and 1-2 short sentences\n"
-                "- Stay in character for the scenario\n\n"
-                "Output only valid JSON: {\"reply\": \"...\"} "
-                "At the end, add: ANSWER: {json output}"
+                "You are a conversation partner in a casual scenario. Reply in 1-2 short sentences. "
+                "Address what the user said directly and ask open-ended questions. Stay in character. Output only JSON: {\"reply\": \"...\"}. "
+                "At the end add: ANSWER: {json}"
             )
             user = (
-                f"Language level instruction: {level_instruction}\n\n"
-                f"{scenario_context}\n\n"
-                f"***RESPOND TO THIS MESSAGE:*** \"{user_message}\"\n\n"
-                f"This is what the user just said. Your job is to respond naturally to EXACTLY this message while staying in the scenario context.\n\n"
-                f"Context (previous conversation):\n{history_str}\n\n"
-                f"{examples_block}"
-                f"Think step by step: What did they say? How should you respond? "
-                f"NOW write your natural response to the user's message above. Stay on their topic. "
-                f"Acknowledge what they said, then respond. Keep it natural and casual. Stay in character for the scenario.\n\n"
-                f"At the end, extract: ANSWER: {{\"reply\": \"...\"}}"
+                f"Level: {level_instruction}\n{scenario_context}\n\n{critic_block}"
+                f"User said: \"{user_message}\"\nContext:\n{history_str}\n\n{examples_block}"
+                f"Reply naturally. ANSWER: {{\"reply\": \"...\"}}"
             )
 
+        # No max_tokens cap so provider returns full reply (some APIs return empty with low max_tokens)
         response, full = call_llm(system, user, "ConversationPartner")
         steps = [{"module": "ConversationPartner", "prompt": {"system": system, "user": user}, "response": full}]
 
@@ -110,6 +98,12 @@ class ConversationPartner:
         answer_only = extract_answer_section(response)
         out = parse_json_from_llm(answer_only)
         reply = (out.get("reply") or "").strip()
+        # If JSON parsing failed or returned no reply, try to extract reply from raw response
+        if not reply:
+            reply = extract_reply_from_llm_response(response or answer_only).strip()
+        # Model sometimes duplicates " ANSWER: {\"reply\": \"...\"}" inside the reply text — strip that
+        if reply and (" ANSWER:" in reply or " answer:" in reply.lower()):
+            reply = reply.split(" ANSWER:")[0].split(" answer:")[0].strip()
 
         # Fallback logic - simple scenario-based responses
         if not reply:

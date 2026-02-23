@@ -51,6 +51,8 @@ def agent_info():
             "RAGQueryRephraser: Converts scenario into an optimized search query for Reddit",
             "ScenarioArchitect: Designs scenario description and dialogue seeds using RAG examples",
             "ConversationPartner: Generates natural conversational responses matching scenario and user level",
+            "CriticGate (from 2nd turn): Decides whether to call Critic (e.g. user said goodbye or conversation diverged from scenario)",
+            "SystemCritic: When invoked, decides to end the conversation or to continue with feedback for ConversationPartner",
             "UserEvaluation: Evaluates user performance at end of conversation and generates improvement summary"
         ],
         "prompt_examples": [
@@ -138,6 +140,7 @@ def execute(req: ExecuteRequest):
                 "response": summary,
                 "reply": summary,
                 "steps": [{"module": "UserEvaluation", "prompt": {"end_conversation": True}, "response": summary or "(end conversation)"}],
+                "conversation_ended": True,
             }
 
         # Load previous conversation summaries + LLM instructions for this profile (from Supabase)
@@ -171,8 +174,51 @@ def execute(req: ExecuteRequest):
             "generated_scenario": scenario_to_use,  # Use scenario from request or DB
             "steps": [],
         }
-        final_response, steps, reply, generated_scenario = supervisor.run(req.prompt, context)
-        
+        final_response, steps, reply, generated_scenario, conversation_ended_by_critic = supervisor.run(req.prompt, context)
+
+        # When Critic decided to end: run UserEvaluation and save like "end conversation by user"
+        if conversation_ended_by_critic:
+            print("\n[BACKEND] Conversation ended by Critic — running UserEvaluation")
+            history_for_eval = list(req.conversation_history or [])
+            if req.prompt:
+                history_for_eval.append({"role": "user", "content": req.prompt})
+            eval_reply, summary, llm_instructions = generate_end_conversation(
+                profile,
+                history_for_eval,
+                req.scenario or (generated_scenario.get("scenario") if generated_scenario else "Casual conversation"),
+            )
+            user_id = (req.user_profile_id or profile.get("id") or "").strip()
+            if user_id:
+                try:
+                    from db.supabase import upsert_proficiency, save_conversation_summary
+                    upsert_proficiency(user_id, {
+                        "last_scenario": req.scenario or "Casual conversation",
+                        "last_summary": summary[:2000] if summary else "",
+                    })
+                    save_conversation_summary(user_id, req.scenario or "Casual conversation", summary, llm_instructions)
+                    print("[BACKEND] ✓ Proficiency and summary saved (Critic end)")
+                except Exception as e:
+                    print(f"[BACKEND] ✗ Error saving after Critic end: {e}")
+            steps_out = []
+            for s in steps:
+                resp = s.get("response")
+                if resp is None or (isinstance(resp, str) and not resp.strip()):
+                    resp = "(empty or null — no response from this step)"
+                steps_out.append({
+                    "module": s.get("module", ""),
+                    "prompt": s.get("prompt", {}),
+                    "response": resp if isinstance(resp, str) else str(resp),
+                })
+            return {
+                "status": "ok",
+                "error": None,
+                "response": summary,
+                "reply": reply or None,
+                "generated_scenario": generated_scenario,
+                "steps": steps_out,
+                "conversation_ended": True,
+            }
+
         # Store generated scenario to Supabase for persistence across sessions
         user_id = (req.user_profile_id or profile.get("id") or "").strip()
         if user_id and generated_scenario:
@@ -185,7 +231,7 @@ def execute(req: ExecuteRequest):
                 print(f"[SAVE] Saved successfully")
             except Exception as e:
                 print(f"[SAVE] Error saving: {e}")
-        
+
         # Normalize steps to { module, prompt, response } per spec
         steps_out = []
         for s in steps:
@@ -204,6 +250,7 @@ def execute(req: ExecuteRequest):
             "reply": reply or None,  # plain agent message for conversation history (opening line or follow-up)
             "generated_scenario": generated_scenario,  # Include generated scenario so frontend can persist it
             "steps": steps_out,
+            "conversation_ended": False,
         }
     except Exception as e:
         return {
@@ -213,6 +260,7 @@ def execute(req: ExecuteRequest):
             "reply": None,
             "generated_scenario": None,
             "steps": [],
+            "conversation_ended": False,
         }
 
 
