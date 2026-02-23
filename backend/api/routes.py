@@ -2,6 +2,7 @@
 API routes: team_info, agent_info, model_architecture, execute.
 """
 import os
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -19,6 +20,7 @@ class ExecuteRequest(BaseModel):
     scenario: str | None = None
     conversation_history: list[dict] | None = None
     end_conversation: bool = False
+    generated_scenario: dict | None = None  # Scenario from first turn, reused on subsequent turns
 
 
 # --- GET /api/team_info ---
@@ -39,21 +41,28 @@ def team_info():
 @router.get("/agent_info")
 def agent_info():
     return {
-        "description": "An AI agent that simulates realistic, slang-based conversations for language learners. It adapts to the user's proficiency and generates scenario-based dialogue practice using real-world conversational data (Reddit via RAG). The system is agent-based, supervised, and optimized to minimize LLM calls.",
-        "purpose": "To give language learners authentic practice in modern slang and informal conversation (TikTok, gaming, real life) by planning scenarios, retrieving informal language patterns, generating dialogue, and reflecting on quality and level.",
+        "description": "An AI agent that simulates realistic, slang-based conversations for language learners. It adapts to the user's proficiency and generates scenario-based dialogue practice using real-world conversational data (Reddit via RAG). The system is agent-based, modular, and optimized to minimize LLM calls.",
+        "purpose": "To give language learners authentic practice in modern slang and informal conversation (TikTok, gaming, real life) by planning scenarios, retrieving informal language patterns, generating natural dialogue, and evaluating progress.",
         "prompt_template": {
             "template": "User profile: {user_profile}. Scenario: {scenario}. User message: {user_message}. (Optional) Learning objective: {learning_objective}."
         },
+        "agent_pipeline": [
+            "ProgramPlanner: Creates learning objectives and conversation structure based on user request and scenario",
+            "RAGQueryRephraser: Converts scenario into an optimized search query for Reddit",
+            "ScenarioArchitect: Designs scenario description and dialogue seeds using RAG examples",
+            "ConversationPartner: Generates natural conversational responses matching scenario and user level",
+            "UserEvaluation: Evaluates user performance at end of conversation and generates improvement summary"
+        ],
         "prompt_examples": [
             {
                 "prompt": "I want to practice ordering food at a casual diner with slang.",
-                "full_response": "SupervisorAgent invokes ProgramPlanner to set learning objective (ordering food, casual register). ScenarioArchitect builds a diner scenario using RAG Reddit chunks. UserEvaluation conducts the dialogue and adapts difficulty. SystemCritic reviews and approves. Final response: Here's a short dialogue to start: [Agent line]. Your turn!",
-                "steps": ["SupervisorAgent", "ProgramPlanner", "ScenarioArchitect", "UserEvaluation", "SystemCritic"],
+                "response": "ProgramPlanner creates objective (ordering food, casual register). RAGQueryRephraser optimizes search. ScenarioArchitect builds diner scenario. ConversationPartner generates opening: 'Hey! Grabbing a bite?' User responds, ConversationPartner continues dialogue naturally. At session end, UserEvaluation provides summary: 'Focus on using more slang expressions, practice ordering variations.'",
+                "steps": ["ProgramPlanner", "RAGQueryRephraser", "ScenarioArchitect", "ConversationPartner", "UserEvaluation (at end)"],
             },
             {
                 "prompt": "Practice arguing about a game with a friend (B1 level).",
-                "full_response": "ProgramPlanner sets objective (disagreeing politely, gaming slang). ScenarioArchitect retrieves Reddit gaming threads and builds scenario. UserEvaluation runs conversation. SystemCritic checks slang authenticity and level. Response: Scenario ready. Friend: 'That was so clutch!' You can reply with your take.",
-                "steps": ["SupervisorAgent", "ProgramPlanner", "ScenarioArchitect", "UserEvaluation", "SystemCritic"],
+                "response": "ProgramPlanner sets objective (gaming slang, friendly disagreement). ScenarioArchitect retrieves Reddit gaming threads, builds scenario. ConversationPartner opens conversation with B1-appropriate slang. Natural dialogue flow based on RAG examples. UserEvaluation at end: 'Good job using 'clutch' and 'toxic'—work on longer turns.'",
+                "steps": ["ProgramPlanner", "RAGQueryRephraser", "ScenarioArchitect", "ConversationPartner"],
             },
         ],
     }
@@ -123,41 +132,60 @@ def execute(req: ExecuteRequest):
                     print(f"[BACKEND] ✗ Error saving to Supabase: {e}")
                     import traceback
                     traceback.print_exc()
-            final_response = f"{reply}\n\n[Summary] {summary}"
             return {
                 "status": "ok",
                 "error": None,
-                "response": final_response,
-                "reply": reply,
+                "response": summary,
+                "reply": summary,
                 "steps": [{"module": "UserEvaluation", "prompt": {"end_conversation": True}, "response": summary or "(end conversation)"}],
             }
 
         # Load previous conversation summaries + LLM instructions for this profile (from Supabase)
         profile_ctx = ""
+        generated_scenario_from_db = None
         if req.user_profile_id:
             try:
-                from db.supabase import get_profile_conversation_context
-                print(f"\n[BACKEND] Loading conversation context from Supabase for user_profile_id: {req.user_profile_id}")
+                from db.supabase import get_profile_conversation_context, get_proficiency
                 profile_ctx = get_profile_conversation_context(req.user_profile_id)
-                if profile_ctx:
-                    print(f"[BACKEND] ✓ Loaded conversation context ({len(profile_ctx)} chars)")
-                    print(f"[BACKEND] Context preview: {profile_ctx[:200]}...")
-                else:
-                    print(f"[BACKEND] No previous conversation context found")
+                
+                # Load last_scenario from Supabase if frontend didn't provide it
+                if not req.generated_scenario:
+                    proficiency = get_proficiency(req.user_profile_id)
+                    if proficiency and proficiency.get("last_scenario"):
+                        try:
+                            generated_scenario_from_db = json.loads(proficiency.get("last_scenario"))
+                            print(f"[SAVE] Loaded scenario from Supabase: {generated_scenario_from_db.get('scenario', 'N/A')}")
+                        except json.JSONDecodeError:
+                            pass
             except Exception as e:
-                print(f"[BACKEND] ✗ Error loading conversation context: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"[SAVE] Error loading from Supabase: {e}")
         supervisor = SupervisorAgent()
+        # Use generated_scenario from request, or fall back to one loaded from DB
+        scenario_to_use = req.generated_scenario or generated_scenario_from_db
         context = {
             "user_profile_id": req.user_profile_id,
             "user_profile": profile,
             "scenario": req.scenario,
             "conversation_history": req.conversation_history or [],
             "profile_conversation_context": profile_ctx,
+            "generated_scenario": scenario_to_use,  # Use scenario from request or DB
             "steps": [],
         }
-        final_response, steps, reply = supervisor.run(req.prompt, context)
+        final_response, steps, reply, generated_scenario = supervisor.run(req.prompt, context)
+        
+        # Store generated scenario to Supabase for persistence across sessions
+        user_id = (req.user_profile_id or profile.get("id") or "").strip()
+        if user_id and generated_scenario:
+            try:
+                from db.supabase import upsert_proficiency
+                print(f"[SAVE] Saving scenario to Supabase: {generated_scenario.get('scenario', 'N/A')}")
+                upsert_proficiency(user_id, {
+                    "last_scenario": json.dumps(generated_scenario),
+                })
+                print(f"[SAVE] Saved successfully")
+            except Exception as e:
+                print(f"[SAVE] Error saving: {e}")
+        
         # Normalize steps to { module, prompt, response } per spec
         steps_out = []
         for s in steps:
@@ -174,6 +202,7 @@ def execute(req: ExecuteRequest):
             "error": None,
             "response": final_response or "No response generated.",
             "reply": reply or None,  # plain agent message for conversation history (opening line or follow-up)
+            "generated_scenario": generated_scenario,  # Include generated scenario so frontend can persist it
             "steps": steps_out,
         }
     except Exception as e:
@@ -182,6 +211,7 @@ def execute(req: ExecuteRequest):
             "error": str(e),
             "response": None,
             "reply": None,
+            "generated_scenario": None,
             "steps": [],
         }
 

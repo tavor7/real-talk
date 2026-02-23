@@ -25,6 +25,18 @@ def truncate_if_needed(text: str, default_max: int | None = None) -> str:
     return text
 
 
+def extract_answer_section(response: str) -> str:
+    """Extract only the part after 'ANSWER:' from LLM response.
+    If no ANSWER: found, return the full response."""
+    text = (response or "").strip()
+    # Look for ANSWER: or answer: (case insensitive)
+    import re
+    match = re.search(r"(?:ANSWER|answer)\s*:\s*([\s\S]*?)$", text)
+    if match:
+        return match.group(1).strip()
+    return text
+
+
 def parse_json_from_llm(response: str) -> dict:
     """Extract JSON from LLM response (handles ```json ... ``` or raw {...})."""
     text = (response or "").strip()
@@ -189,12 +201,31 @@ def call_llm(system: str, user: str, module: str) -> tuple[str, str]:
 def _mock_response(module: str, err: str | None) -> str:
     """Sensible mock so app runs without API key."""
     mocks = {
-        "ProgramPlanner": json.dumps({"learning_objective": "Practice informal slang in a casual scenario.", "conversation_structure": ["greeting", "topic", "follow-up", "close"]}),
-        "ScenarioArchitect": json.dumps({"scenario": "Casual chat at a coffee shop", "dialogue_seed": ["Hey! What's up?", "Not much, just grabbing coffee."]}),
-        "UserEvaluation": json.dumps({"reply": "Hey! That's cool. What do you want to practice today?", "summary": None}),
-        "SystemCritic": json.dumps({"approved": True, "should_finish": False, "feedback": "Level and slang appropriateness OK."}),
-        "SupervisorAgent": "Plan created. Scenario ready. You can start the conversation.",
+        "ProgramPlanner": json.dumps({
+            "learning_objective": "Practice informal slang in a casual scenario.",
+            "conversation_structure": ["greeting", "topic", "follow-up", "close"],
+            "key_vocabulary": ["slang", "informal", "casual"],
+            "difficulty_adjustments": "Adapt to learner level"
+        }),
+        "RAGQueryRephraser": "casual slang conversation authentic dialogue practice",
+        "ScenarioArchitect": json.dumps({
+            "scenario": "You're at a casual coffee shop having a conversation about everyday topics with slang and informal expressions."
+        }),
+        "ConversationPartner": json.dumps({
+            "reply": "Hey! What's up?"
+        }),
+        "UserEvaluation": json.dumps({
+            "sign_off": "Good job! Chat later!",
+            "evaluation": "Your grammar is good overall. Work on using more varied vocabulary and natural expressions. Try to use more contractions and phrasal verbs.",
+            "llm_instructions": "User is at B1 level; focus on expanding vocabulary and using more natural expressions in next session."
+        }),
     }
     if err:
-        return (mocks.get(module) or mocks["SupervisorAgent"]) + f" [LLM error: {err}]"
-    return mocks.get(module) or mocks["SupervisorAgent"]
+        result = mocks.get(module)
+        if not result:
+            return f"[ERROR in {module}: {err}]"
+        return result + f" [LLM error: {err}]"
+    result = mocks.get(module)
+    if not result:
+        return f"[WARNING: No mock found for module '{module}' - this may cause issues]"
+    return result

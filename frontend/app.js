@@ -145,17 +145,22 @@ window.endConversation = async function endConversation() {
     renderRequestResponseFields(requestBody, data);
     showSection("requestResponseSection");
 
-    const reply = data.reply != null ? data.reply : (data.response || "").split("\n\n[Summary]")[0];
+    const reply = data.reply || data.response || "";
     conversationHistory.push({ role: "assistant", content: reply });
     renderConversation();
 
-    if (data.response && data.response.includes("[Summary]")) {
-      const idx = data.response.indexOf("[Summary]");
-      lastSummary = data.response.slice(idx);
-      document.getElementById("summaryContent").textContent = lastSummary;
-      showSection("summarySection");
+    // Extract evaluation from UserEvaluation step and show it in the Conversation summary & evaluation box
+    let evaluation = "Evaluation not available.";
+    if (data.steps && Array.isArray(data.steps)) {
+      const evalStep = data.steps.find(s => s.module === "UserEvaluation");
+      if (evalStep && evalStep.response) {
+        evaluation = evalStep.response;
+      }
     }
-    document.getElementById("finalResponse").textContent = data.response || "";
+    document.getElementById("summaryContent").textContent = evaluation;
+    showSection("summarySection");
+    // Don't show finalResponse section anymore
+    
     setConversationEndedUI(true);
     setRequestInProgress(false); // Reset request state after successful end
     endBtn.textContent = "End conversation"; // Reset button text

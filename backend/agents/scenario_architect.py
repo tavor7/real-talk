@@ -3,7 +3,7 @@ ScenarioArchitect: Builds realistic scenarios from RAG + user profile; pre-decid
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, truncate_if_needed
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, truncate_if_needed
 from rag.reddit_retriever import retrieve
 
 
@@ -41,39 +41,95 @@ class ScenarioArchitect:
         """Returns (scenario with dialogue_seed), steps for logging."""
         steps = []
         hint = scenario_hint or "casual informal conversation"
-        # RAG: retrieve by scenario + user goals + recent conversation (relevant to current topic)
-        rag_query = _build_rag_query(hint, user_profile, context)
-        chunks = retrieve(rag_query, top_k=5, use_cache=True)
-        rag_texts = [_truncate_if_needed(c.get("text", "").strip()) for c in chunks if c.get("text")]
+        
+        # Use rephrased RAG query from supervisor if available, otherwise build one
+        rephrased_rag_query = context.get("rephrased_rag_query")
+        if rephrased_rag_query:
+            rag_query = rephrased_rag_query
+        else:
+            # Fallback: build RAG query locally if supervisor didn't rephrase it
+            rag_query = _build_rag_query(hint, user_profile, context)
+        print(f"ScenarioArchitect: Using RAG query: '{rag_query}'")
+        # RAG: retrieve using the optimized query
+        chunks = retrieve(rag_query, top_k=3, use_cache=True)
+        rag_texts = [truncate_if_needed(c.get("text", "").strip()) for c in chunks if c.get("text")]
         rag_context = "\n".join(rag_texts) if rag_texts else ""
 
-        # Scenario text should include the learner's profile so the UI shows a personalized brief
+        # Extract user profile and plan details
         name = (user_profile.get("name") or "the learner").strip()
         level = (user_profile.get("level") or "B1").strip()
         goals_str = (user_profile.get("goals") or "").strip()
         profile_brief = f"Learner: {name}, level {level}" + (f", into {goals_str}" if goals_str else "")
+        
+        # Get plan details
+        learning_objective = plan.get("learning_objective", "practice informal conversation")
+        conversation_structure = plan.get("conversation_structure", [])
+        key_vocabulary = plan.get("key_vocabulary", [])
+        difficulty_adjustments = plan.get("difficulty_adjustments", "")
+        
+        # Enhanced system prompt focused on scenario only
         system = (
-            "You are a scenario builder for language practice. Output only valid JSON with keys: scenario (string), dialogue_seed (list of 2-3 opening lines). "
-            "scenario = 1-2 sentences describing the setting. The learner is practicing AS the chosen profile (e.g. Alex, A2 level, into gaming/streaming). "
-            "The agent will talk TO the learner as a casual conversation partner in this setting. "
-            "Example: 'You're practicing as Alex at a coffee shop. Have a casual chat about drinks, gaming/streaming, and everyday topics.' "
-            "Use informal slang. Keep it short. Focus on natural conversation, not service transactions."
+            "You are an expert scenario designer for authentic language practice. \n\n"
+            "Think through the following steps:\n"
+            "1. Understand the learning objective and what skills should be practiced\n"
+            "2. Analyze the conversation structure and key vocabulary needed\n"
+            "3. Review authentic examples from the RAG corpus\n"
+            "4. Design a SPECIFIC setting that naturally incorporates the learning focus\n"
+            "5. Describe it with authentic, informal slang\n\n"
+            "Output ONLY valid JSON with this exact key:\n"
+            "- scenario: 2-3 sentences describing the SPECIFIC setting and context for this conversation\n\n"
+            "CRITICAL: The scenario must be SPECIFIC to the learning objective, not generic. "
+            "Describe the setting and conversational context clearly. "
+            "Use informal, authentic slang in the description. Focus on natural dialogue context, not transactions. "
+            "At the end, add: ANSWER: {json output}"
         )
-        plan_full = plan.get("learning_objective") or ""
-        # Truncate only if LLM_PROMPT_MAX_LENGTH env var is set
-        plan_for_llm = truncate_if_needed(plan_full)
+        
+        # Build detailed prompt with full context
+        plan_for_llm = truncate_if_needed(learning_objective)
         rag_for_llm = truncate_if_needed(rag_context)
-        user_for_llm = f"{profile_brief}. Hint: {hint}. Plan: {plan_for_llm}. RAG: {rag_for_llm}\nOutput JSON: scenario (describe setting; learner practices AS this profile; agent talks TO learner), dialogue_seed (2-3 example opening lines the AGENT might say TO the learner)."
+        structure_str = ", ".join(conversation_structure[:5]) if conversation_structure else "greeting, topic, exchange, close"
+        vocab_str = ", ".join(key_vocabulary[:5]) if key_vocabulary else "casual slang"
+        
+        user_for_llm = (
+            f"Learning Objective: {plan_for_llm}\n"
+            f"Conversation Structure: {structure_str}\n"
+            #f"Key Vocabulary: {vocab_str}\n"
+            #f"Scenario Setting: {hint}\n\n"
+            f"Retrieved examples of authentic speech you can use to design the scenario:\n{rag_for_llm}\n\n"
+            f"Design a SPECIFIC, engaging scenario for this conversation. "
+            f"Think through the learning objective and authentic examples. "
+            f"think step by step, at the end, write your final scenario as ANSWER: {{json with 'scenario' key only}}"
+        )
+        
         # For logging: always store full prompt so user sees everything
-        user_full = f"{profile_brief}. Hint: {hint}. Plan: {plan_full}. RAG: {rag_context}\nOutput JSON: scenario (describe setting; learner practices AS this profile; agent talks TO learner), dialogue_seed (2-3 example opening lines the AGENT might say TO the learner)."
+        user_full = (
+            f"Learning Objective: {learning_objective}\n"
+            f"Conversation Structure: {', '.join(conversation_structure) if conversation_structure else 'natural flow'}\n"
+            #f"Key Vocabulary: {', '.join(key_vocabulary) if key_vocabulary else 'contextual slang'}\n"
+            #f"Scenario Setting: {hint}\n\n"
+            f"Retrieved examples of authentic speech:\n{rag_context}\n\n"
+            f"Design a SPECIFIC, engaging scenario for this conversation. "
+            f"Think through the learning objective and authentic examples. "
+            f"Focus on the setting and context. Include authentic slang in the description. "
+            f"At the end, extract your final answer as ANSWER: {{json with 'scenario' key only}}"
+        )
+        
         response, full = call_llm(system, user_for_llm, "ScenarioArchitect")
-        steps.append({"module": "ScenarioArchitect", "prompt": {"system": system, "user": user_full, "rag_query": rag_query}, "response": full})
+        steps.append({
+            "module": "ScenarioArchitect",
+            "prompt": {"system": system, "user": user_full},
+            "response": full
+        })
 
-        out = parse_json_from_llm(response)
-        # Fallback scenario: clarify that learner practices AS the profile, agent talks TO them
-        fallback_scenario = f"Practice as {name} (level {level}" + (f", into {goals_str}" if goals_str else "") + f") in a casual scenario. The agent will talk to you."
+        # Extract only the ANSWER section, discarding reasoning steps
+        answer_only = extract_answer_section(response)
+        out = parse_json_from_llm(answer_only)
+        
+        # Smarter fallback scenario based on actual learning objective
+        fallback_scenario = f"Scenario: {hint}. Learning focus: {learning_objective}. Have a natural conversation in this context using authentic slang."
+        
         out.setdefault("scenario", fallback_scenario)
-        out.setdefault("dialogue_seed", [f"Hey {name}! What's up?" if name else "Hey! What's up?", "Not much, you?"])
-        # Pass RAG examples to UserEvaluation so replies use real informal style
+        
+        # Pass RAG examples to ConversationPartner so replies use real informal style
         out["rag_examples"] = rag_texts[:5]
         return out, steps

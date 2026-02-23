@@ -71,6 +71,11 @@ header p {
   display: none !important;
 }
 
+/* Hide the Final response box */
+#responseSection {
+  display: none !important;
+}
+
 main {
   max-width: 720px;
   margin: 0 auto;
