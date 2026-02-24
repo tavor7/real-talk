@@ -48,4 +48,5 @@ if os.path.exists(frontend_path):
 
 @app.get("/")
 def root():
-    return {"message": "Language School AI Agent API", "docs": "/docs", "app": "/app/"}
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/app/")
