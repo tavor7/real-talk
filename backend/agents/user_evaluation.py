@@ -5,17 +5,7 @@ Evaluation and feedback are based solely on the learner's (user's) messages, not
 import json
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section
-
-# Short CEFR level descriptions shown at the start of the end-of-conversation summary
-CEFR_LEVEL_DESCRIPTIONS = {
-    "A1": "Beginner — You can understand and use familiar everyday expressions and very basic phrases.",
-    "A2": "Elementary — You can communicate in simple, routine tasks and describe in simple terms aspects of your life.",
-    "B1": "Intermediate — You can deal with most situations while traveling and describe experiences, events, and give reasons.",
-    "B2": "Upper intermediate — You can interact with fluency and discuss familiar topics in some depth.",
-    "C1": "Advanced — You can use language flexibly and produce clear, well-structured text on complex subjects.",
-    "C2": "Proficient — You can understand virtually everything and express yourself spontaneously and precisely.",
-}
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, CEFR_LEVEL_DESCRIPTIONS
 
 
 def evaluate_user_performance(

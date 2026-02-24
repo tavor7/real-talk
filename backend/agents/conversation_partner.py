@@ -4,7 +4,7 @@ Talks TO the learner as a conversation partner in the scenario.
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, extract_reply_from_llm_response
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, extract_reply_from_llm_response, cefr_label
 
 
 def _level_instruction(level: str) -> str:
@@ -66,7 +66,7 @@ class ConversationPartner:
                 "At the end, add: ANSWER: {json output}"
             )
             user = (
-                f"Language level instruction: {level_instruction}\n\n"
+                f"Learner level: {cefr_label(level)} — {level_instruction}\n\n"
                 f"{scenario_context}\n\n"
                 f"Start a natural conversation in this scenario. Write the FIRST line you say. "
                 f"Think step by step about how to open naturally. "
@@ -85,7 +85,7 @@ class ConversationPartner:
                 "At the end add: ANSWER: {json}"
             )
             user = (
-                f"Level: {level_instruction}\n{scenario_context}\n\n{critic_block}"
+                f"Learner level: {cefr_label(level)} — {level_instruction}\n{scenario_context}\n\n{critic_block}"
                 f"User said: \"{user_message}\"\nContext:\n{history_str}\n\n{examples_block}"
                 f"Reply naturally. ANSWER: {{\"reply\": \"...\"}}"
             )

@@ -3,7 +3,7 @@ ProgramPlanner (Plan & Execute Agent): Breaks request into steps, decides learni
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, cefr_label
 
 
 class ProgramPlanner:
@@ -29,19 +29,18 @@ class ProgramPlanner:
         
         # Enhanced system prompt
         system = (
-            "You are an expert language learning planner specializing in slang and informal conversation practice. \n\n"
+            "You are an expert language learning planner specializing in casual and daily conversation practice. \n\n"
             "Think through the following steps:\n"
             "1. Analyze the learner's level and goals\n"
             "2. Identify key skills to practice in this scenario\n"
             "3. Plan conversation phases that build naturally\n"
-            "4. Select authentic slang and informal phrases\n"
-            "5. Determine difficulty adjustments for the learner's level\n\n"
+            "4. Determine difficulty adjustments for the learner's level\n\n"
             "Output ONLY valid JSON with these exact keys:\n"
             "- learning_objective: 1-2 sentences describing what the learner will practice (specific skills, vocabulary, grammar)\n"
             "- conversation_structure: list of 4-5 conversation phases (e.g. 'greeting', 'introduce interests', 'discuss topic', 'swap roles', 'wrap-up')\n"
-            "- key_vocabulary: list of 5-7 slang words or phrases relevant to this scenario\n"
+            "- key_vocabulary: list of 5-7 words or phrases relevant to this scenario\n"
             "- difficulty_adjustments: brief guidance on adapting to the user's level\n"
-            "Focus on authentic, modern slang and informal speech patterns. "
+            "Focus on authentic, modern daily speech patterns. "
             "At the end, add: ANSWER: {json output}"
         )
         
@@ -49,7 +48,7 @@ class ProgramPlanner:
         user = (
             f"Learner Profile:\n"
             f"- Name: {name}\n"
-            f"- Level: {level}\n"
+            f"- Level: {cefr_label(level)}\n"
             f"- Interests: {goals if goals else '(not specified)'}\n\n"
             f"Scenario: {scenario if scenario else prompt}\n\n"
             f"User request: {prompt}\n\n"
@@ -60,7 +59,7 @@ class ProgramPlanner:
         
         user += (
             "Plan a structured, engaging conversation practice session tailored to this learner's level and interests. "
-            "Think through each element step by step. Emphasize authentic slang and informal speech. "
+            "Think through each element step by step."
             "At the end, extract your final answer as ANSWER: {json output}"
         )
         
@@ -71,9 +70,9 @@ class ProgramPlanner:
         plan = parse_json_from_llm(answer_only)
         
         # Defaults with enhanced structure
-        plan.setdefault("learning_objective", f"Practice {scenario or prompt} using authentic slang appropriate for {level} level.")
+        plan.setdefault("learning_objective", f"Practice {scenario or prompt} using authentic daily speech appropriate for {level} level.")
         plan.setdefault("conversation_structure", ["greeting", "explore interests", "discuss topic", "exchange perspective", "friendly close"])
-        plan.setdefault("key_vocabulary", ["slang", "informal", "casual"])
-        plan.setdefault("difficulty_adjustments", f"Adapt to {level} level: use {level}-appropriate vocabulary and grammar complexity.")
+        plan.setdefault("key_vocabulary", ["daily", "informal", "casual"])
+        plan.setdefault("difficulty_adjustments", f"Adapt to {cefr_label(level)}: use vocabulary and grammar complexity appropriate for this level.")
         
         return plan, steps

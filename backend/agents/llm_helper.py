@@ -9,6 +9,26 @@ import time
 from typing import Any
 
 
+# Short CEFR level descriptions shared across all agents
+CEFR_LEVEL_DESCRIPTIONS: dict[str, str] = {
+    "A1": "Beginner — can understand and use familiar everyday expressions and very basic phrases.",
+    "A2": "Elementary — can communicate in simple, routine tasks and describe basic aspects of daily life.",
+    "B1": "Intermediate — can deal with most everyday situations and describe experiences and give reasons.",
+    "B2": "Upper-Intermediate — can interact with fluency and discuss familiar topics in some depth.",
+    "C1": "Advanced — can use language flexibly and express ideas clearly on complex subjects.",
+    "C2": "Proficient — can understand virtually everything and express spontaneously and precisely.",
+}
+
+
+def cefr_label(level: str) -> str:
+    """Return a concise label like 'B1 (Intermediate — can deal with most everyday situations...)'."""
+    level = (level or "B1").upper().strip()
+    desc = CEFR_LEVEL_DESCRIPTIONS.get(level)
+    if desc:
+        return f"{level} ({desc})"
+    return level
+
+
 def truncate_if_needed(text: str, default_max: int | None = None) -> str:
     """Truncate text only if LLM_PROMPT_MAX_LENGTH env var is set. Otherwise return full text.
     If env var is set, use that limit. If not set and default_max is provided, use default_max.

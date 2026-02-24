@@ -3,7 +3,7 @@ ScenarioArchitect: Builds realistic scenarios from RAG + user profile; pre-decid
 """
 from typing import Any
 
-from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, truncate_if_needed
+from .llm_helper import call_llm, parse_json_from_llm, extract_answer_section, truncate_if_needed, cefr_label
 from rag.reddit_retriever import retrieve
 
 
@@ -59,7 +59,7 @@ class ScenarioArchitect:
         name = (user_profile.get("name") or "the learner").strip()
         level = (user_profile.get("level") or "B1").strip()
         goals_str = (user_profile.get("goals") or "").strip()
-        profile_brief = f"Learner: {name}, level {level}" + (f", into {goals_str}" if goals_str else "")
+        profile_brief = f"Learner: {name}, level {cefr_label(level)}" + (f", into {goals_str}" if goals_str else "")
         
         # Get plan details
         learning_objective = plan.get("learning_objective", "practice informal conversation")
@@ -75,12 +75,11 @@ class ScenarioArchitect:
             "2. Analyze the conversation structure and key vocabulary needed\n"
             "3. Review authentic examples from the RAG corpus\n"
             "4. Design a SPECIFIC setting that naturally incorporates the learning focus\n"
-            "5. Describe it with authentic, informal slang\n\n"
+            "5. Describe it with authentic, casual daily speech.\n\n"
             "Output ONLY valid JSON with this exact key:\n"
             "- scenario: 2-3 sentences describing the SPECIFIC setting and context for this conversation\n\n"
-            "CRITICAL: The scenario must be SPECIFIC to the learning objective, not generic. "
+            "The scenario must be SPECIFIC to the learning objective, not generic. "
             "Describe the setting and conversational context clearly. "
-            "Use informal, authentic slang in the description. Focus on natural dialogue context, not transactions. "
             "At the end, add: ANSWER: {json output}"
         )
         
@@ -88,29 +87,27 @@ class ScenarioArchitect:
         plan_for_llm = truncate_if_needed(learning_objective)
         rag_for_llm = truncate_if_needed(rag_context)
         structure_str = ", ".join(conversation_structure[:5]) if conversation_structure else "greeting, topic, exchange, close"
-        vocab_str = ", ".join(key_vocabulary[:5]) if key_vocabulary else "casual slang"
+        vocab_str = ", ".join(key_vocabulary[:5]) if key_vocabulary else "casual speech"
         
         user_for_llm = (
+            f"Learner profile: {profile_brief}\n"
             f"Learning Objective: {plan_for_llm}\n"
             f"Conversation Structure: {structure_str}\n"
-            #f"Key Vocabulary: {vocab_str}\n"
-            #f"Scenario Setting: {hint}\n\n"
             f"Retrieved examples of authentic speech you can use to design the scenario:\n{rag_for_llm}\n\n"
             f"Design a SPECIFIC, engaging scenario for this conversation. "
             f"Think through the learning objective and authentic examples. "
             f"think step by step, at the end, write your final scenario as ANSWER: {{json with 'scenario' key only}}"
         )
-        
+
         # For logging: always store full prompt so user sees everything
         user_full = (
+            f"Learner profile: {profile_brief}\n"
             f"Learning Objective: {learning_objective}\n"
             f"Conversation Structure: {', '.join(conversation_structure) if conversation_structure else 'natural flow'}\n"
-            #f"Key Vocabulary: {', '.join(key_vocabulary) if key_vocabulary else 'contextual slang'}\n"
-            #f"Scenario Setting: {hint}\n\n"
             f"Retrieved examples of authentic speech:\n{rag_context}\n\n"
             f"Design a SPECIFIC, engaging scenario for this conversation. "
             f"Think through the learning objective and authentic examples. "
-            f"Focus on the setting and context. Include authentic slang in the description. "
+            f"Focus on the setting and context."
             f"At the end, extract your final answer as ANSWER: {{json with 'scenario' key only}}"
         )
         
@@ -126,7 +123,7 @@ class ScenarioArchitect:
         out = parse_json_from_llm(answer_only)
         
         # Smarter fallback scenario based on actual learning objective
-        fallback_scenario = f"Scenario: {hint}. Learning focus: {learning_objective}. Have a natural conversation in this context using authentic slang."
+        fallback_scenario = f"Scenario: {hint}. Learning focus: {learning_objective}. Have a natural conversation in this context using authentic daily speech."
         
         out.setdefault("scenario", fallback_scenario)
         

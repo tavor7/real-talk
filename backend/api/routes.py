@@ -45,7 +45,7 @@ def agent_info():
         "description": "An AI agent that simulates realistic, slang-based conversations for language learners. It adapts to the user's proficiency and generates scenario-based dialogue practice using real-world conversational data (Reddit via RAG). The system is agent-based, modular, and optimized to minimize LLM calls.",
         "purpose": "To give language learners authentic practice in modern slang and informal conversation (TikTok, gaming, real life) by planning scenarios, retrieving informal language patterns, generating natural dialogue, and evaluating progress.",
         "prompt_template": {
-            "template": "User profile: {user_profile}. Scenario: {scenario}. User message: {user_message}. (Optional) Learning objective: {learning_objective}."
+            "template": "User profile: {user_profile}. Scenario: {scenario}. User message: {user_message}. Conversation history: {conversation_hostory}(Optional) Learning objective: {learning_objective}."
         },
         "agent_pipeline": [
             "ProgramPlanner: Creates learning objectives and conversation structure based on user request and scenario",
@@ -59,13 +59,79 @@ def agent_info():
         "prompt_examples": [
             {
                 "prompt": "I want to practice ordering food at a casual diner with slang.",
-                "response": "ProgramPlanner creates objective (ordering food, casual register). RAGQueryRephraser optimizes search. ScenarioArchitect builds diner scenario. ConversationPartner generates opening: 'Hey! Grabbing a bite?' User responds, ConversationPartner continues dialogue naturally. At session end, UserEvaluation provides summary: 'Focus on using more slang expressions, practice ordering variations.'",
-                "steps": ["ProgramPlanner", "RAGQueryRephraser", "ScenarioArchitect", "ConversationPartner", "UserEvaluation (at end)"],
+                "full_response": "[Scenario: You're at a greasy-spoon diner, sliding into a booth. The vibe is lowkey chill — think worn-out menus and a server who's seen it all. Time to order something comfort-food-y and shoot the breeze.]\n\nYo, what's good? You grabbing something greasy or you going light today?\n\nYour turn!",
+                "steps": [
+                    {
+                        "module": "ProgramPlanner",
+                        "prompt": {
+                            "system": "You are an expert language learning planner specializing in causal and daily conversation practice.",
+                            "user": "Learner Profile: Name: Alex, Interests: gaming, streaming. Scenario: ordering food at a casual diner. Plan a structured conversation."
+                        },
+                        "response": "{\"learning_objective\": \"Practice ordering food casually using informal expressions and slang at an A2 level.\", \"conversation_structure\": [\"greeting\", \"browse menu\", \"place order\", \"small talk\", \"pay and leave\"], \"key_vocabulary\": [\"grab a bite\", \"what's good\", \"I'll have\", \"hook me up\", \"on the side\"], \"difficulty_adjustments\": \"Keep sentences short; avoid complex idioms.\"}"
+                    },
+                    {
+                        "module": "RAGQueryRephraser",
+                        "prompt": {
+                            "system": "You are an expert at crafting search queries for retrieving authentic real-life conversations.",
+                            "user": "Query subject: ordering food at a casual diner. Think step by step. At the end, extract: ANSWER: {the search query}"
+                        },
+                        "response": "casual diner ordering food slang informal"
+                    },
+                    {
+                        "module": "ScenarioArchitect",
+                        "prompt": {
+                            "system": "You are an expert scenario designer for authentic language practice.",
+                            "user": "Learning Objective: Practice ordering food casually. Retrieved examples: ['yeah just gimme the usual', 'hook me up with fries on the side', 'what's the special today?']. Design a SPECIFIC scenario."
+                        },
+                        "response": "{\"scenario\": \"You're at a greasy-spoon diner, sliding into a booth. The vibe is lowkey chill — think worn-out menus and a server who's seen it all. Time to order something comfort-food-y and shoot the breeze.\", \"rag_examples\": [\"yeah just gimme the usual\", \"hook me up with fries on the side\"]}"
+                    },
+                    {
+                        "module": "ConversationPartner",
+                        "prompt": {
+                            "system": "You are a conversation partner in a casual scenario. Reply in 1-2 short sentences, informal slang.",
+                            "user": "Level: Use simple words and short sentences. Scenario: You're at a greasy-spoon diner... Start a natural conversation."
+                        },
+                        "response": "{\"reply\": \"Yo, what's good? You grabbing something greasy or you going light today?\"}"
+                    }
+                ],
             },
             {
                 "prompt": "Practice arguing about a game with a friend (B1 level).",
-                "response": "ProgramPlanner sets objective (gaming slang, friendly disagreement). ScenarioArchitect retrieves Reddit gaming threads, builds scenario. ConversationPartner opens conversation with B1-appropriate slang. Natural dialogue flow based on RAG examples. UserEvaluation at end: 'Good job using 'clutch' and 'toxic'—work on longer turns.'",
-                "steps": ["ProgramPlanner", "RAGQueryRephraser", "ScenarioArchitect", "ConversationPartner"],
+                "full_response": "[Scenario: You and your buddy are deep in a post-match argument on Discord — your squad just got wrecked and fingers are being pointed. The vibe is friendly trash-talk mixed with actual game analysis.]\n\nBro that last round was actually painful to watch — you really pushed mid with no support lmao. What were you thinking?\n\nYour turn!",
+                "steps": [
+                    {
+                        "module": "ProgramPlanner",
+                        "prompt": {
+                            "system": "You are an expert language learning planner specializing in slang and informal conversation practice.",
+                            "user": "Learner Profile: Name: Maria, Level: B1, Interests: travel, TikTok. Scenario: arguing about a game with a friend. Plan a structured conversation."
+                        },
+                        "response": "{\"learning_objective\": \"Practice friendly disagreement and gaming slang in a natural back-and-forth at B1 level.\", \"conversation_structure\": [\"open with complaint\", \"defend position\", \"counter-argument\", \"agree to disagree\", \"plan next game\"], \"key_vocabulary\": [\"clutch\", \"toxic\", \"throw\", \"no cap\", \"we got wrecked\"], \"difficulty_adjustments\": \"Use everyday informal language and common gaming slang.\"}"
+                    },
+                    {
+                        "module": "RAGQueryRephraser",
+                        "prompt": {
+                            "system": "You are an expert at crafting search queries for retrieving authentic real-life conversations.",
+                            "user": "Query subject: arguing about a game with a friend. Think step by step. At the end, extract: ANSWER: {the search query}"
+                        },
+                        "response": "gaming slang friendly argument post-match Discord"
+                    },
+                    {
+                        "module": "ScenarioArchitect",
+                        "prompt": {
+                            "system": "You are an expert scenario designer for authentic language practice.",
+                            "user": "Learning Objective: Practice friendly disagreement and gaming slang. Retrieved examples: ['bro you literally inted', 'no cap that play was trash', 'clutch or kick lmao']. Design a SPECIFIC scenario."
+                        },
+                        "response": "{\"scenario\": \"You and your buddy are deep in a post-match argument on Discord — your squad just got wrecked and fingers are being pointed. The vibe is friendly trash-talk mixed with actual game analysis.\", \"rag_examples\": [\"bro you literally inted\", \"no cap that play was trash\", \"clutch or kick lmao\"]}"
+                    },
+                    {
+                        "module": "ConversationPartner",
+                        "prompt": {
+                            "system": "You are a conversation partner in a casual scenario. Reply in 1-2 short sentences, informal slang.",
+                            "user": "Level: Use everyday informal language and common slang. Scenario: You and your buddy are deep in a post-match argument on Discord... Start a natural conversation."
+                        },
+                        "response": "{\"reply\": \"Bro that last round was actually painful to watch — you really pushed mid with no support lmao. What were you thinking?\"}"
+                    }
+                ],
             },
         ],
     }
