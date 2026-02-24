@@ -21,6 +21,7 @@ class ExecuteRequest(BaseModel):
     conversation_history: list[dict] | None = None
     end_conversation: bool = False
     generated_scenario: dict | None = None  # Scenario from first turn, reused on subsequent turns
+    session_id: str | None = None  # CLI mode: server-side conversation history via Supabase
 
 
 # --- GET /api/team_info ---
@@ -95,18 +96,38 @@ def execute(req: ExecuteRequest):
             profiles[0] if profiles else {},
         )
 
+        # --- CLI session: load server-side conversation history from Supabase ---
+        cli_session = None
+        if req.session_id:
+            try:
+                from db.supabase import get_cli_session
+                cli_session = get_cli_session(req.session_id)
+                if cli_session:
+                    print(f"[CLI] Loaded session {req.session_id}: {len(cli_session.get('conversation_history') or [])} messages")
+            except Exception as e:
+                print(f"[CLI] Error loading CLI session: {e}")
+
+        # Merge CLI session data into request fields when present
+        effective_history = req.conversation_history
+        effective_generated_scenario = req.generated_scenario
+        effective_scenario = req.scenario
+        if cli_session:
+            effective_history = cli_session.get("conversation_history") or []
+            effective_generated_scenario = cli_session.get("generated_scenario")
+            effective_scenario = cli_session.get("scenario") or req.scenario
+
         if req.end_conversation:
             print("\n" + "="*80)
             print("[BACKEND] End conversation request received")
             print(f"[BACKEND] User profile ID: {req.user_profile_id}")
-            print(f"[BACKEND] Scenario: {req.scenario}")
-            print(f"[BACKEND] Conversation history length: {len(req.conversation_history or [])}")
+            print(f"[BACKEND] Scenario: {effective_scenario}")
+            print(f"[BACKEND] Conversation history length: {len(effective_history or [])}")
             print("="*80)
             
             reply, summary, llm_instructions = generate_end_conversation(
                 profile,
-                req.conversation_history or [],
-                req.scenario or "Casual conversation",
+                effective_history or [],
+                effective_scenario or "Casual conversation",
             )
             
             print(f"[BACKEND] Generated reply: {reply[:100]}...")
@@ -119,13 +140,13 @@ def execute(req: ExecuteRequest):
                     from db.supabase import upsert_proficiency, save_conversation_summary
                     print(f"[BACKEND] Saving to Supabase for user_id: {user_id}")
                     upsert_proficiency(user_id, {
-                        "last_scenario": req.scenario or "Casual conversation",
+                        "last_scenario": effective_scenario or "Casual conversation",
                         "last_summary": summary[:2000] if summary else "",
                     })
                     print(f"[BACKEND] ✓ Proficiency saved to Supabase")
                     save_conversation_summary(
                         user_id,
-                        req.scenario or "Casual conversation",
+                        effective_scenario or "Casual conversation",
                         summary,
                         llm_instructions,
                     )
@@ -134,6 +155,13 @@ def execute(req: ExecuteRequest):
                     print(f"[BACKEND] ✗ Error saving to Supabase: {e}")
                     import traceback
                     traceback.print_exc()
+            # Delete CLI session on conversation end
+            if req.session_id:
+                try:
+                    from db.supabase import delete_cli_session
+                    delete_cli_session(req.session_id)
+                except Exception as e:
+                    print(f"[CLI] Error deleting CLI session: {e}")
             return {
                 "status": "ok",
                 "error": None,
@@ -150,9 +178,9 @@ def execute(req: ExecuteRequest):
             try:
                 from db.supabase import get_profile_conversation_context, get_proficiency
                 profile_ctx = get_profile_conversation_context(req.user_profile_id)
-                
-                # Load last_scenario from Supabase if frontend didn't provide it
-                if not req.generated_scenario:
+
+                # Load last_scenario from Supabase if neither request nor CLI session provided it
+                if not effective_generated_scenario:
                     proficiency = get_proficiency(req.user_profile_id)
                     if proficiency and proficiency.get("last_scenario"):
                         try:
@@ -163,15 +191,15 @@ def execute(req: ExecuteRequest):
             except Exception as e:
                 print(f"[SAVE] Error loading from Supabase: {e}")
         supervisor = SupervisorAgent()
-        # Use generated_scenario from request, or fall back to one loaded from DB
-        scenario_to_use = req.generated_scenario or generated_scenario_from_db
+        # Use generated_scenario from CLI session / request, or fall back to one loaded from DB
+        scenario_to_use = effective_generated_scenario or generated_scenario_from_db
         context = {
             "user_profile_id": req.user_profile_id,
             "user_profile": profile,
-            "scenario": req.scenario,
-            "conversation_history": req.conversation_history or [],
+            "scenario": effective_scenario,
+            "conversation_history": effective_history or [],
             "profile_conversation_context": profile_ctx,
-            "generated_scenario": scenario_to_use,  # Use scenario from request or DB
+            "generated_scenario": scenario_to_use,
             "steps": [],
         }
         final_response, steps, reply, generated_scenario, conversation_ended_by_critic = supervisor.run(req.prompt, context)
@@ -179,26 +207,33 @@ def execute(req: ExecuteRequest):
         # When Critic decided to end: run UserEvaluation and save like "end conversation by user"
         if conversation_ended_by_critic:
             print("\n[BACKEND] Conversation ended by Critic — running UserEvaluation")
-            history_for_eval = list(req.conversation_history or [])
+            history_for_eval = list(effective_history or [])
             if req.prompt:
                 history_for_eval.append({"role": "user", "content": req.prompt})
             eval_reply, summary, llm_instructions = generate_end_conversation(
                 profile,
                 history_for_eval,
-                req.scenario or (generated_scenario.get("scenario") if generated_scenario else "Casual conversation"),
+                effective_scenario or (generated_scenario.get("scenario") if generated_scenario else "Casual conversation"),
             )
             user_id = (req.user_profile_id or profile.get("id") or "").strip()
             if user_id:
                 try:
                     from db.supabase import upsert_proficiency, save_conversation_summary
                     upsert_proficiency(user_id, {
-                        "last_scenario": req.scenario or "Casual conversation",
+                        "last_scenario": effective_scenario or "Casual conversation",
                         "last_summary": summary[:2000] if summary else "",
                     })
-                    save_conversation_summary(user_id, req.scenario or "Casual conversation", summary, llm_instructions)
+                    save_conversation_summary(user_id, effective_scenario or "Casual conversation", summary, llm_instructions)
                     print("[BACKEND] ✓ Proficiency and summary saved (Critic end)")
                 except Exception as e:
                     print(f"[BACKEND] ✗ Error saving after Critic end: {e}")
+            # Delete CLI session on Critic-triggered end
+            if req.session_id:
+                try:
+                    from db.supabase import delete_cli_session
+                    delete_cli_session(req.session_id)
+                except Exception as e:
+                    print(f"[CLI] Error deleting CLI session: {e}")
             steps_out = []
             for s in steps:
                 resp = s.get("response")
@@ -231,6 +266,25 @@ def execute(req: ExecuteRequest):
                 print(f"[SAVE] Saved successfully")
             except Exception as e:
                 print(f"[SAVE] Error saving: {e}")
+
+        # CLI session: persist updated conversation history + generated_scenario after every turn
+        if req.session_id:
+            try:
+                from db.supabase import save_cli_session
+                updated_history = list(effective_history or [])
+                # Add the agent's reply to history so the next turn includes it
+                if reply:
+                    updated_history.append({"role": "assistant", "content": reply})
+                save_cli_session(
+                    req.session_id,
+                    req.user_profile_id or str(profile.get("id", "")),
+                    effective_scenario or "",
+                    updated_history,
+                    generated_scenario,
+                )
+                print(f"[CLI] Session saved: {len(updated_history)} messages")
+            except Exception as e:
+                print(f"[CLI] Error saving CLI session: {e}")
 
         # Normalize steps to { module, prompt, response } per spec
         steps_out = []

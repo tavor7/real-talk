@@ -119,6 +119,69 @@ def save_conversation_summary(
         raise
 
 
+# ---------------------------------------------------------------------------
+# CLI session storage — active conversation history for terminal users.
+# A session row lives only for the duration of one conversation and is deleted
+# when the conversation ends (end_conversation=True or Critic ends it).
+# ---------------------------------------------------------------------------
+
+def save_cli_session(
+    session_id: str,
+    user_profile_id: str,
+    scenario: str,
+    conversation_history: list,
+    generated_scenario: dict | None,
+) -> None:
+    """Upsert an active CLI session (conversation history + current scenario)."""
+    import json as _json
+    client = get_client()
+    if not client:
+        return
+    try:
+        client.table("cli_sessions").upsert({
+            "session_id": session_id,
+            "user_profile_id": user_profile_id,
+            "scenario": (scenario or "")[:500],
+            "conversation_history": _json.dumps(conversation_history or []),
+            "generated_scenario": _json.dumps(generated_scenario) if generated_scenario else None,
+        }).execute()
+    except Exception as e:
+        print(f"[Supabase] Error saving CLI session: {e}")
+
+
+def get_cli_session(session_id: str) -> dict | None:
+    """Return the active CLI session row, or None if not found."""
+    import json as _json
+    client = get_client()
+    if not client:
+        return None
+    try:
+        r = client.table("cli_sessions").select("*").eq("session_id", session_id).limit(1).execute()
+        if r.data:
+            row = r.data[0]
+            # Deserialise JSON strings back to Python objects
+            if isinstance(row.get("conversation_history"), str):
+                row["conversation_history"] = _json.loads(row["conversation_history"])
+            if isinstance(row.get("generated_scenario"), str) and row["generated_scenario"]:
+                row["generated_scenario"] = _json.loads(row["generated_scenario"])
+            return row
+    except Exception as e:
+        print(f"[Supabase] Error loading CLI session: {e}")
+    return None
+
+
+def delete_cli_session(session_id: str) -> None:
+    """Delete a CLI session after the conversation has ended."""
+    client = get_client()
+    if not client:
+        return
+    try:
+        client.table("cli_sessions").delete().eq("session_id", session_id).execute()
+        print(f"[Supabase] CLI session deleted: {session_id}")
+    except Exception as e:
+        print(f"[Supabase] Error deleting CLI session: {e}")
+
+
 def get_profile_conversation_context(user_profile_id: str, max_summaries: int = 5) -> str:
     """Return a single string of previous summaries + latest LLM instructions for use in the next conversation.
     Empty string if no data. Used to inject into LLM context when starting a new conversation.
