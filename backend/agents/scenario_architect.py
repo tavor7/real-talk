@@ -51,7 +51,7 @@ class ScenarioArchitect:
             rag_query = _build_rag_query(hint, user_profile, context)
         print(f"ScenarioArchitect: Using RAG query: '{rag_query}'")
         # RAG: retrieve using the optimized query
-        chunks = retrieve(rag_query, top_k=3, use_cache=True)
+        chunks = retrieve(rag_query, top_k=1, use_cache=True)
         rag_texts = [truncate_if_needed(c.get("text", "").strip()) for c in chunks if c.get("text")]
         rag_context = "\n".join(rag_texts) if rag_texts else ""
 
