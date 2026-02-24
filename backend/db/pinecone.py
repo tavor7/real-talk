@@ -27,10 +27,19 @@ def query_reddit(query_embedding: list[float], top_k: int = 5) -> list[dict[str,
         return []
     try:
         r = idx.query(vector=query_embedding, top_k=top_k, include_metadata=True)
+        # SDK v3 returns QueryResponse with .matches (ScoredVector objects), not plain dicts
+        matches = []
+        if hasattr(r, "matches"):
+            matches = r.matches or []
+        elif isinstance(r, dict):
+            matches = r.get("matches") or []
         out = []
-        for m in (r.get("matches") or []):
-            meta = (m.get("metadata") or {}) if isinstance(m, dict) else {}
-            text = meta.get("text", "")
+        for m in matches:
+            if isinstance(m, dict):
+                meta = m.get("metadata") or {}
+            else:
+                meta = getattr(m, "metadata", None) or {}
+            text = meta.get("text", "") if isinstance(meta, dict) else getattr(meta, "text", "")
             out.append({"text": text, "metadata": meta})
         return out
     except Exception:

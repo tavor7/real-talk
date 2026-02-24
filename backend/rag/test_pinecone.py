@@ -60,12 +60,22 @@ def main():
     dummy = [0.1] * dim
     try:
         r = idx.query(vector=dummy, top_k=2, include_metadata=True)
-        matches = r.get("matches") or []
+        # SDK v3 returns QueryResponse with .matches (ScoredVector objects), not plain dicts
+        matches = []
+        if hasattr(r, "matches"):
+            matches = r.matches or []
+        elif isinstance(r, dict):
+            matches = r.get("matches") or []
         print(f"  query (top_k=2): {len(matches)} matches")
         for i, m in enumerate(matches):
-            meta = (m.get("metadata") or {}) if isinstance(m, dict) else {}
-            text = (meta.get("text") or "")[:60]
-            print(f"    [{i}] id={m.get('id')} text={text!r}...")
+            if isinstance(m, dict):
+                meta = m.get("metadata") or {}
+                mid = m.get("id", "")
+            else:
+                meta = getattr(m, "metadata", None) or {}
+                mid = getattr(m, "id", "")
+            text = (meta.get("text") or "")[:60] if isinstance(meta, dict) else (getattr(meta, "text", "") or "")[:60]
+            print(f"    [{i}] id={mid} text={text!r}...")
     except Exception as e:
         print(f"  query failed: {e}")
 
