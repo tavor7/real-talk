@@ -81,9 +81,11 @@ class SupervisorAgent:
     ) -> tuple[bool, list[dict]]:
         """Decide whether to invoke the Critic. Uses fast path: skip LLM when message clearly isn't a farewell."""
         # Fast path: if last message doesn't look like a farewell, skip CriticGate LLM (saves ~3-5s per turn)
+        """
         if not self._looks_like_farewell(last_user_message):
             step_info = {"module": "CriticGate", "prompt": {"fast_path": True, "reason": "no farewell phrase"}, "response": "Skipped (fast path): reply via ConversationPartner only."}
             return False, [step_info]
+        """
         # Otherwise run LLM to decide (user might be ending or diverging)
         scenario_desc = scenario_out.get("scenario", scenario_hint) or scenario_hint
         history_str = "\n".join(
