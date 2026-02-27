@@ -238,14 +238,16 @@ def execute(req: ExecuteRequest, request: Request):
                     print(f"[SESSION] Session deleted: {session_id[:8]}...")
                 except Exception as e:
                     print(f"[SESSION] Error deleting session: {e}")
-            return {
+            result = {
                 "status": "ok",
                 "error": None,
                 "response": summary,
-                "reply": summary,
                 "steps": [{"module": "UserEvaluation", "prompt": {"end_conversation": True}, "response": summary or "(end conversation)"}],
-                "conversation_ended": True,
             }
+            if req.conversation_history is not None:
+                result["reply"] = summary
+                result["conversation_ended"] = True
+            return result
 
         # Load previous conversation summaries + LLM instructions for this profile (from Supabase)
         profile_ctx = ""
@@ -320,15 +322,16 @@ def execute(req: ExecuteRequest, request: Request):
                     "prompt": s.get("prompt", {}),
                     "response": resp if isinstance(resp, str) else str(resp),
                 })
-            return {
+            result = {
                 "status": "ok",
                 "error": None,
                 "response": summary,
-                "reply": reply or None,
-                "generated_scenario": generated_scenario,
                 "steps": steps_out,
-                "conversation_ended": True,
             }
+            if req.conversation_history is not None:
+                result["reply"] = reply or None
+                result["conversation_ended"] = True
+            return result
 
         # Store generated scenario to Supabase for persistence across sessions
         user_id = (req.user_profile_id or profile.get("id") or "").strip()
@@ -373,24 +376,23 @@ def execute(req: ExecuteRequest, request: Request):
                 "prompt": s.get("prompt", {}),
                 "response": resp if isinstance(resp, str) else str(resp),
             })
-        return {
+        result = {
             "status": "ok",
             "error": None,
-            "response": final_response or "No response generated.",
-            "reply": reply or None,
-            "generated_scenario": generated_scenario,
+            "response": reply or final_response or "No response generated.",
             "steps": steps_out,
-            "conversation_ended": False,
         }
+        if req.conversation_history is not None:
+            result["reply"] = reply or None
+            result["generated_scenario"] = generated_scenario
+            result["conversation_ended"] = False
+        return result
     except Exception as e:
         return {
             "status": "error",
             "error": str(e),
             "response": None,
-            "reply": None,
-            "generated_scenario": None,
             "steps": [],
-            "conversation_ended": False,
         }
 
 
