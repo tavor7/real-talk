@@ -126,11 +126,7 @@ All endpoints are prefixed with `/api/`.
 
 Returns student details.
 
-```bash
-curl http://localhost:8000/api/team_info
-```
-
-Response:
+Response format (JSON):
 
 ```json
 {
@@ -146,69 +142,65 @@ Response:
 
 ### B) `GET /api/agent_info`
 
-Returns agent description, purpose, prompt templates, pipeline description, and full prompt examples with traced steps.
+Returns agent meta and how to use it.
 
-```bash
-curl http://localhost:8000/api/agent_info
+Response format (JSON):
+
+```json
+{
+  "description": "...",
+  "purpose": "...",
+  "prompt_template": {
+    "template": "..."
+  },
+  "agent_pipeline": ["ProgramPlanner: ...", "RAGQueryRephraser: ...", "..."],
+  "prompt_examples": [
+    {
+      "prompt": "Example prompt...",
+      "full_response": "Full response the agent returns...",
+      "steps": [
+        {
+          "module": "ProgramPlanner",
+          "prompt": {"system": "...", "user": "..."},
+          "response": "..."
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Response includes:
-- `description` -- what the agent does
-- `purpose` -- why it exists
-- `prompt_template` -- suggested input format
-- `agent_pipeline` -- ordered list of all modules in the pipeline
-- `prompt_examples` -- two full worked examples with all steps (ProgramPlanner, RAGQueryRephraser, ScenarioArchitect, ConversationPartner)
+Includes `description`, `purpose`, `prompt_template`, `agent_pipeline` (ordered list of all modules), and `prompt_examples` (two full worked examples with all traced steps).
 
 ### C) `GET /api/model_architecture`
 
 Returns the architecture diagram as a PNG image.
 
-```bash
-curl http://localhost:8000/api/model_architecture -o architecture.png
-```
-
 - Content-Type: `image/png`
-- All sub-module names in the diagram match the step names in `/api/execute` responses.
+- Body: the PNG file
+- All sub-module names in the diagram are consistent with the module names in `/api/execute` step traces.
 
 ### D) `POST /api/execute`
 
-Main entry point. Accepts a user prompt and returns the agent response with full traced steps.
+Main entry point. The user sends an input prompt; the API returns the agent's response and the full traced steps.
 
-**Input:**
+**Input format (JSON):**
 
 ```json
 {
-  "prompt": "User request here",
-  "user_profile_id": "1",
-  "scenario": "Coffee shop conversation",
-  "conversation_history": [],
-  "end_conversation": false,
-  "generated_scenario": null,
-  "session_id": null
+  "prompt": "User request here"
 }
 ```
 
-Only `prompt` is required. All other fields are optional.
+Only `prompt` is required. The server automatically manages conversation state -- it remembers previous messages so follow-up prompts continue the same conversation without the caller needing to send any extra fields.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `prompt` | string (required) | The user's message |
-| `user_profile_id` | string | Profile ID from `/api/user_profiles`. Defaults to first profile. |
-| `scenario` | string | Scenario name or description. Defaults to "Casual conversation". |
-| `conversation_history` | list | Previous messages as `[{"role": "user"/"assistant", "content": "..."}]` |
-| `end_conversation` | bool | Set `true` to end and get evaluation summary |
-| `generated_scenario` | dict | Scenario object from first turn (reused on subsequent turns) |
-| `session_id` | string | CLI mode only: enables server-side history via Supabase |
-
-**Success Response:**
+**Response format (JSON):**
 
 ```json
 {
   "status": "ok",
   "error": null,
-  "response": "Full agent response text...",
-  "reply": "Plain message for conversation history",
-  "generated_scenario": {"scenario": "..."},
+  "response": "Yo, what's good? You grabbing something greasy or you going light today?",
   "steps": [
     {
       "module": "ProgramPlanner",
@@ -219,38 +211,48 @@ Only `prompt` is required. All other fields are optional.
       "module": "RAGQueryRephraser",
       "prompt": {"system": "...", "user": "..."},
       "response": "..."
+    },
+    {
+      "module": "ScenarioArchitect",
+      "prompt": {"system": "...", "user": "..."},
+      "response": "..."
+    },
+    {
+      "module": "ConversationPartner",
+      "prompt": {"system": "...", "user": "..."},
+      "response": "..."
     }
-  ],
-  "conversation_ended": false
+  ]
 }
 ```
 
-**Error Response:**
+If error:
 
 ```json
 {
   "status": "error",
   "error": "Human-readable error description",
   "response": null,
-  "reply": null,
-  "generated_scenario": null,
-  "steps": [],
-  "conversation_ended": false
+  "steps": []
 }
 ```
 
-**Steps** is an array of every LLM call the agent made, in order. Each step contains:
-- `module` -- the module name (matches the architecture diagram)
-- `prompt` -- the full prompt sent to the LLM (`system` + `user`)
+**Steps** is an array describing every LLM call the agent made, in order. Each step includes:
+- `module` -- the module name (consistent with the architecture diagram)
+- `prompt` -- the full prompt sent to the LLM
 - `response` -- the full LLM response
+
+**Multi-turn conversation:**
+
+The server remembers each conversation automatically. To have a multi-turn conversation, just keep sending `POST /api/execute` with `{"prompt": "..."}`:
+
+1. `POST {"prompt": "I want to practice ordering coffee"}` -- agent creates a scenario and responds
+2. `POST {"prompt": "Lemme get an iced latte"}` -- agent remembers the scenario and continues
+3. `POST {"prompt": "", "end_conversation": true}` -- agent returns an evaluation summary and the conversation resets
 
 ### E) `GET /api/user_profiles`
 
 Returns the list of 10 predefined user profiles from Supabase (or built-in defaults).
-
-```bash
-curl http://localhost:8000/api/user_profiles
-```
 
 ## Frontend (Web UI)
 

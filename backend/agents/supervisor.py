@@ -168,7 +168,7 @@ class SupervisorAgent:
             partner_out, steps3 = self.conversation_partner.run("", scenario_out, enhanced_context, is_first_turn=True)
             all_steps.extend(steps3)
             reply = partner_out.get("reply", "Let's start! Say something casual.")
-            final = f"[Scenario: {scenario_out.get('scenario', '')}]\n\n{reply}\n\nYour turn!"
+            final = reply
             return final, all_steps, reply, scenario_out, False
 
         # SUBSEQUENT TURNS (from 2nd): Gate -> optionally Critic -> ConversationPartner
