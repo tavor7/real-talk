@@ -177,21 +177,11 @@ class SupervisorAgent:
         print(f"[DEBUG] Conversation history length: {len(conversation_history)}")
         print(f"[DEBUG] Found {len(user_messages)} user messages in history")
 
-        # Gate: should we call the Critic?
+        # Gate: CriticGate decides on every user message whether to invoke the Critic
         call_critic, gate_steps = self._should_call_critic(
             scenario_hint, scenario_out, last_user, conversation_history
         )
-        num_user_messages = len(user_messages)
-        # Every 3 user messages, call the Critic anyway (even if heuristic said no)
-        if num_user_messages > 0 and num_user_messages % 3 == 0:
-            call_critic = True
-            all_steps.append({
-                "module": "CriticGate",
-                "prompt": {"every_3_messages": True, "user_message_count": num_user_messages},
-                "response": "Forced Critic run (every 3 messages).",
-            })
-        else:
-            all_steps.extend(gate_steps)
+        all_steps.extend(gate_steps)
 
         if call_critic:
             # Critic decides: end conversation or continue with feedback

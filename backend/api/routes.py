@@ -13,6 +13,10 @@ from agents.supervisor import SupervisorAgent
 
 router = APIRouter()
 
+# In-memory session store for API clients (keyed by IP + profile).
+# Shape: { session_id: { "conversation_history": [...], "generated_scenario": {...}, "scenario": "..." } }
+_sessions: dict[str, dict] = {}
+
 # --- Response models ---
 class ExecuteRequest(BaseModel):
     prompt: str
@@ -162,10 +166,10 @@ def execute(req: ExecuteRequest, request: Request):
             profiles[0] if profiles else {},
         )
 
-        # --- Server-side session management ---
+        # --- In-memory session management (per API client) ---
         # When the caller sends just {"prompt": "..."} (no session_id, no conversation_history),
-        # the server uses a deterministic session key based on the caller's IP so each
-        # API client gets its own isolated conversation automatically.
+        # the server uses a deterministic session key based on the caller's IP and profile so
+        # each API client gets its own isolated conversation automatically.
         session_id = req.session_id
         use_server_session = bool(session_id) or (req.conversation_history is None)
         if not session_id and req.conversation_history is None:
@@ -176,13 +180,12 @@ def execute(req: ExecuteRequest, request: Request):
 
         server_session = None
         if use_server_session and session_id:
-            try:
-                from db.supabase import get_cli_session
-                server_session = get_cli_session(session_id)
-                if server_session:
-                    print(f"[SESSION] Loaded session {session_id[:8]}...: {len(server_session.get('conversation_history') or [])} messages")
-            except Exception as e:
-                print(f"[SESSION] Error loading session: {e}")
+            server_session = _sessions.get(session_id) or None
+            if server_session:
+                print(
+                    f"[SESSION] Loaded session {session_id}: "
+                    f"{len(server_session.get('conversation_history') or [])} messages"
+                )
 
         effective_history = req.conversation_history
         effective_generated_scenario = req.generated_scenario
@@ -232,12 +235,10 @@ def execute(req: ExecuteRequest, request: Request):
                     import traceback
                     traceback.print_exc()
             if use_server_session and session_id:
-                try:
-                    from db.supabase import delete_cli_session
-                    delete_cli_session(session_id)
-                    print(f"[SESSION] Session deleted: {session_id[:8]}...")
-                except Exception as e:
-                    print(f"[SESSION] Error deleting session: {e}")
+                # End-of-conversation: clear in-memory session for this API client.
+                if session_id in _sessions:
+                    _sessions.pop(session_id, None)
+                    print(f"[SESSION] Session deleted: {session_id}")
             result = {
                 "status": "ok",
                 "error": None,
@@ -306,12 +307,10 @@ def execute(req: ExecuteRequest, request: Request):
                 except Exception as e:
                     print(f"[BACKEND] ✗ Error saving after Critic end: {e}")
             if use_server_session and session_id:
-                try:
-                    from db.supabase import delete_cli_session
-                    delete_cli_session(session_id)
-                    print(f"[SESSION] Session deleted (Critic end): {session_id[:8]}...")
-                except Exception as e:
-                    print(f"[SESSION] Error deleting session: {e}")
+                # Critic-triggered end: clear in-memory session for this API client.
+                if session_id in _sessions:
+                    _sessions.pop(session_id, None)
+                    print(f"[SESSION] Session deleted (Critic end): {session_id}")
             steps_out = []
             for s in steps:
                 resp = s.get("response")
@@ -347,23 +346,19 @@ def execute(req: ExecuteRequest, request: Request):
                 print(f"[SAVE] Error saving: {e}")
 
         if use_server_session and session_id:
-            try:
-                from db.supabase import save_cli_session
-                updated_history = list(effective_history or [])
-                if req.prompt:
-                    updated_history.append({"role": "user", "content": req.prompt})
-                if reply:
-                    updated_history.append({"role": "assistant", "content": reply})
-                save_cli_session(
-                    session_id,
-                    req.user_profile_id or str(profile.get("id", "")),
-                    effective_scenario or req.prompt,
-                    updated_history,
-                    generated_scenario,
-                )
-                print(f"[SESSION] Session saved: {len(updated_history)} messages")
-            except Exception as e:
-                print(f"[SESSION] Error saving session: {e}")
+            # Persist updated conversation in in-memory session store.
+            updated_history = list(effective_history or [])
+            if req.prompt:
+                updated_history.append({"role": "user", "content": req.prompt})
+            if reply:
+                updated_history.append({"role": "assistant", "content": reply})
+            _sessions[session_id] = {
+                "user_profile_id": req.user_profile_id or str(profile.get("id", "")),
+                "scenario": effective_scenario or req.prompt or "",
+                "conversation_history": updated_history,
+                "generated_scenario": generated_scenario,
+            }
+            print(f"[SESSION] Session saved: {len(updated_history)} messages")
 
         # Normalize steps to { module, prompt, response } per spec
         steps_out = []
